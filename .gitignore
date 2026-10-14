@@ -1,0 +1,17 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.env
+*.env
+.notify.json
+.notify.json.bad-*
+.session
+.watch.json
+.actions.json
+.actions.jsonl
+*.lock
+
+.health.json
+.prune.json

@@ -1,0 +1,12 @@
+{
+  "name": "botroll-site",
+  "compatibility_date": "2026-10-11",
+  "assets": {
+    "directory": "./"
+  },
+  "routes": [
+    { "pattern": "botroll.co", "custom_domain": true },
+    { "pattern": "www.botroll.co", "custom_domain": true }
+  ],
+  "workers_dev": false
+}

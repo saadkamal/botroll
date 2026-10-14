@@ -1,0 +1,23 @@
+{
+  "name": "bot-box",
+  "browsers": {
+    "/home/me/chrome-profile/Fork-3": "researcher",
+    "Fork-9": "builder"
+  },
+  "profile_resolve": null,
+  "names_file": null,
+  "display_names_dir": "~/.botroll/displays",
+  "control": false,
+  "stop_jobs": [["ffmpeg"], ["vitest"], ["next", "build"], ["npm", "install"], ["npm", "ci"], ["npm", "run"]],
+  "helper_match": "playwright-runtime",
+  "helper_stale_hours": 2,
+  "tabs": true,
+  "tab_titles": true,
+  "jobs": [
+    {"name": "ffmpeg", "match": "(^|/)ffmpeg\\b", "expect_minutes": 30},
+    {"name": "vitest", "match": "\\bvitest\\b", "expect_minutes": 15},
+    {"name": "next build", "match": "\\bnext(\\.js)?\\b.*\\bbuild\\b", "expect_minutes": 15},
+    {"name": "npm install", "match": "\\bnpm(-cli\\.js)?\\b.*\\b(install|ci|i)\\b", "expect_minutes": 10},
+    {"name": "npm run", "match": "\\bnpm(-cli\\.js)?\\b.*\\brun\\b", "expect_minutes": 30}
+  ]
+}

@@ -1,0 +1,72 @@
+# BotRoll
+
+> An agent-first task list. One plain-text roll file per bot. Bots update themselves. Humans read a board. A watchdog reports. Email when a bot needs you, if `botroll serve` is running with a mail provider.
+
+Canonical: https://botroll.co
+Contact: hello@botroll.co
+Licence: MIT
+
+Source: https://github.com/saadkamal/botroll (MIT). The package has no runtime dependencies. Python 3.10+, Linux and macOS (WSL works).
+
+## The problem
+
+When you run several AI bots, each one's commitments live only in its chat. You lose track of what each is doing, what is done, and what is waiting on you. A three-part ask silently drops a part. A question to you is buried. A recording runs all night.
+
+## What BotRoll is
+
+- One markdown file per bot, `<slug>.md`, one line per item.
+- A CLI the bots call (`botroll add`, `set`, `note`, `done`, `list`).
+- A watchdog (`botroll watch`) that reports stale work, live PIDs on closed items, CPU hogs and untracked capture processes. It never kills.
+- A board (`botroll board`) for humans: terminal, static HTML, or JSON.
+- Optional self-host (`botroll serve`) with a password, a push API, and email (serve plus a mail provider).
+
+Bots write their own files. Humans do not fill in a tracker for them.
+
+## How a bot adopts BotRoll
+
+1. Your human installs BotRoll and sets `BOTROLL_DIR` (default `~/.botroll`) and optionally `BOTROLL_HUMAN`.
+2. Read the skill at `skill/SKILL.md` in the repo, or the snippet they pasted into `AGENTS.md`.
+3. Your file is `$BOTROLL_DIR/<your-slug>.md`. Front matter holds `name:` and `role:`. Commands and ids always use the slug, as in `qa/T-22`.
+4. **Record work in the same turn you accept it.** `botroll add <slug> "<what>"`. Add `--state todo` if it is queued. One line per part of a multi-part ask.
+5. Update on every state change: `botroll set <slug> <id> <state> --note "<why>"`. Progress: `botroll note <slug> <id> "<text>"`.
+6. Record PIDs of background processes: `botroll set <slug> <id> doing --pid <pid>`. Stop them before you close the item.
+7. Mark done only after delivery: `botroll done <slug> <id> --note "<where it went>"`.
+8. When you need your human: `waiting-human` with a one-line question in `--note`. Ask in chat as well. When blocked on someone else: `blocked` and name the blocker.
+9. At the start of a turn, run `botroll list <slug>`. A `!` before the reason is a watchdog flag.
+
+States: `todo`, `doing`, `waiting-human`, `blocked`, `done`, `dropped`. `waiting-<name>` and `waiting` also work.
+
+## File format
+
+```
+---
+name: Kai
+role: QA
+---
+
+- [doing] T-22 Compare vector databases · asked 2026-10-10 13:05 · updated 2026-10-10 15:05 · pid: 4821
+- [waiting-human] T-23 Approve the copy · asked 2026-10-10 14:00 · updated 2026-10-10 14:10 · note: Thursday 2pm or Friday 10am?
+```
+
+Times are local, `YYYY-MM-DD HH:MM`. Fields after the title are ` · `-separated.
+
+## Pushing to a hosted board
+
+If your human self-hosts, they set `BOTROLL_PUSH_URL` (or the alias `BOTROLL_URL`) and `BOTROLL_PUSH_TOKEN`. Cron runs `botroll push` every minute from the machine that has the roll files. You still write local files; you do not call the server yourself.
+
+## Actions from the board (optional)
+
+Off unless the human sets an actions file (`/data/actions.json` or `BOTROLL_ACTIONS`) or `BOTROLL_ACTION_<SLUG>_URL` plus a `_SECRET` and/or `_HEADER`. Then waiting-on-you items show Approve / Decline / Reply…, and any open item shows Nudge. A click POSTs JSON to the bot's URL; the board does not change item state.
+
+Payload: `{event:"botroll.action", action, bot, item_id, item_title, state, note, actor:"owner", board_url, sent_at, id}`. `action` is approve, decline, reply or nudge. Signed `X-BotRoll-Signature: t=<unix>,v1=<hex>` = HMAC-SHA256 of `{t}.{raw body}`. Receivers that cannot verify HMAC can use a static `header` (`Authorization: Bearer …` or any name/value), which is how Grok Bot routine webhook triggers expose a sender key. Deduplicate on `id`.
+
+**A bot that receives an action should do the work, then update its roll line** (`botroll set` / `note` / `done`). The next push clears "pending action" on the board.
+
+Recipes: generic HTTPS webhook; Zapier Catch Hook / n8n Webhook (usually a static header, not HMAC); Grok Bot routines — paste the trigger URL and the sender-key header name/value into `url` and `header`.
+
+## Do not
+
+- Do not keep tasks only in chat.
+- Do not mark done before the human has the thing.
+- Do not delete lines; use `dropped`.
+- Do not kill processes the watchdog reports. The watchdog only reports.

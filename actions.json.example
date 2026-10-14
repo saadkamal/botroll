@@ -1,0 +1,10 @@
+{
+  "assistant": {
+    "url": "https://hooks.example.com/botroll",
+    "secret": "replace-with-at-least-32-random-characters"
+  },
+  "*": {
+    "url": "https://hooks.example.com/botroll-sync",
+    "secret": "replace-with-at-least-32-random-characters"
+  }
+}
