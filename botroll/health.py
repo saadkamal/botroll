@@ -173,8 +173,8 @@ def plain_text(text) -> str:
 
 
 def norm_path(path: str) -> str:
-    """A profile path without trailing slashes ("/" stays "/")."""
-    return path.rstrip("/") or path[:1]
+    """A profile path in normal form: no trailing slash, no "." or "x/.." parts ("/" stays "/", "" stays "")."""
+    return os.path.normpath(path) if path else path
 
 
 def _clean_name(text: str) -> str | None:
@@ -268,6 +268,42 @@ def profile_label(user_data_dir: str) -> str | None:
 DEFAULT_LABEL = re.compile(r"Your Chrome|Person \d+|Profile \d+|Default", re.I)
 
 
+SALT_FILE = "~/.botroll/health-salt"
+_salt: bytes | None = None
+
+
+def _install_salt() -> bytes:
+    """A random per-install key (created 0600 on first use), so a profile id can't be computed from a guessed
+    path. If the file can't be read or written, a per-process key is used (ids then change on restart)."""
+    global _salt
+    if _salt is None:
+        path = os.path.expanduser(SALT_FILE)
+        try:
+            with open(path, "rb") as f:
+                _salt = f.read(64)
+        except OSError:
+            _salt = b""
+        if len(_salt) < 16:
+            _salt = os.urandom(32)
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                with os.fdopen(fd, "wb") as f:
+                    f.write(_salt)
+            except OSError:
+                pass
+    return _salt
+
+
+def profile_id(user_data_dir: str) -> str:
+    """A short, stable id for a profile path (HMAC with the per-install salt), so two folders with the same name
+    can be told apart on the board without sending or revealing the path itself."""
+    import hashlib
+    import hmac
+    return hmac.new(_install_salt(), norm_path(user_data_dir).encode("utf-8", "surrogatepass"),
+                    hashlib.sha256).hexdigest()[:8]
+
+
 def resolve_profile(profile: str, cfg: dict, cache: dict | None = None, pid: int | None = None) -> str | None:
     """Map a user-data-dir to a bot name. Never invents a name. In order:
     the browsers map, names_file, the optional profile_resolve command, then the per-display name file."""
@@ -328,7 +364,8 @@ def group_browsers(rows: list[dict], cpu: dict, cfg: dict, at: float | None = No
         g = groups.setdefault(full, {"profile": profile, "bot": None, "label": None, "_full": full,
                                         "procs": 0, "rss_mb": 0, "cpu": 0.0, "port": None,
                                         "main_pid": None, "started_at": None,
-                                        "closable": configured_browser(full, cfg), "_kb": 0})
+                                        "closable": configured_browser(full, cfg),
+                                        "profile_id": profile_id(full), "_kb": 0})
         g["procs"] += 1
         g["_kb"] += r["rss_kb"]
         g["cpu"] = round(g["cpu"] + cpu.get(r["pid"], 0.0), 1)
@@ -629,7 +666,9 @@ def _browser(g) -> dict:
            "port": _opt(g.get("port"), _int, 1, 65535),
            "main_pid": _opt(g.get("main_pid"), _int, 1),
            "started_at": (_opt(g.get("started_at"), _int, 0) if isinstance(g.get("started_at"), int) and g["started_at"] >= 0 else None),
-           "closable": g.get("closable") is True}
+           "closable": g.get("closable") is True,
+           "profile_id": g["profile_id"] if isinstance(g.get("profile_id"), str)
+           and re.fullmatch(r"[0-9a-f]{8}", g["profile_id"]) is not None else None}
     if "tabs" in g:
         out["tabs"] = _opt(g["tabs"], _list, _tab)
     return out

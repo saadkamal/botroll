@@ -520,7 +520,7 @@ def health_panel(snap: dict, env=os.environ, csrf: str | None = None, control: b
     return ""
 
 
-def _ctl(kind: str, fields: dict, csrf: str, label: str) -> str:
+def _ctl(kind: str, fields: dict, csrf: str, label: str, confirm: str = "Confirm") -> str:
     """Confirm via <details> (CSP-safe: no inline handlers)."""
     e = html.escape
     hidden = "".join(f'<input type="hidden" name="{e(k)}" value="{e(str(v))}">' for k, v in fields.items())
@@ -528,20 +528,45 @@ def _ctl(kind: str, fields: dict, csrf: str, label: str) -> str:
             f'<form class="act" method="post" action="/health/control">'
             f'<input type="hidden" name="csrf" value="{e(csrf)}">'
             f'<input type="hidden" name="kind" value="{e(kind)}">{hidden}'
-            f'<button class="btn small primary" type="submit">Confirm</button></form></details>')
+            f'<button class="btn small primary" type="submit">{e(confirm)}</button></form></details>')
 
 
-def _browser_row(g: dict, shown: str, ctl_btn) -> str:
+def _profile_labels(browsers: list[dict], names: list[str]) -> list[str]:
+    """Profile labels that tell browsers apart: the folder name; plus the short path id (or the pid) when the
+    shown name and folder both match another browser's; then ' pid N' on any (name, label) still duplicated,
+    since an id comes from the sample and a folder can be named like a label ('Fork-3 #c23f2ced')."""
+    plain = [box.plain_text(g["profile"]) for g in browsers]
+    keys = list(zip(names, plain))
+    labels = []
+    for g, key, p in zip(browsers, keys, plain):
+        if keys.count(key) > 1:
+            p += f' #{g["profile_id"]}' if g.get("profile_id") else f' pid {g.get("main_pid") or "?"}'
+        labels.append(p)
+    keys = list(zip(names, labels))
+    return [lab + f' pid {g.get("main_pid") or "?"}' if keys.count(k) > 1 else lab
+            for g, k, lab in zip(browsers, keys, labels)]
+
+
+def _browser_row(g: dict, shown: str, ctl_btn, shared: bool = False, profile: str | None = None) -> str:
     """One browser: a header (name or fallback, processes, memory, CPU, tab count, Close) with its tabs
-    nested under it. Collapsible with <details>; Close sits outside <summary> so clicking it never toggles."""
+    nested under it. Collapsible with <details>; Close sits outside <summary> so clicking it never toggles.
+    shared: another browser shows the same name, so the header and the Close confirm name the profile.
+    profile: the label for the profile (see _profile_labels); defaults to the folder name."""
     e = html.escape
+    plain = box.plain_text(g["profile"])
+    profile = plain if profile is None else profile
+    distinct = profile != plain  # a short path id or pid was added to tell it apart
     btn = ""
     if g.get("closable") is True and g.get("main_pid") and g.get("started_at") is not None:
         btn = ctl_btn("close-browser", {"profile": g["profile"], "pid": g["main_pid"],
-                                        "started_at": g["started_at"]}, "Close browser")
-    hint = "" if g.get("bot") else (
-        f' <span class="muted">{e(box.plain_text(g["profile"]))} · profile name</span>' if g.get("label")
-        else ' <span class="muted">unmapped</span>')
+                                        "started_at": g["started_at"]}, "Close browser",
+                      f"Close {profile}" if shared or distinct else "Confirm")
+    if g.get("bot"):
+        hint = f' <span class="muted">{e(profile)}</span>' if shared or distinct else ""
+    elif g.get("label"):
+        hint = f' <span class="muted">{e(profile)} · profile name</span>'
+    else:
+        hint = f' <span class="muted">{e(profile) + " · " if distinct else ""}unmapped</span>'
     tabs = g.get("tabs")
     count = "tabs –" if tabs is None else f'{len(tabs)} tab{"s" * (len(tabs) != 1)}'
     meta = (f'<span class="h-br-meta">{e(str(g.get("procs", "")))} proc · {_gb(g.get("rss_mb", 0))} · '
@@ -589,12 +614,15 @@ def _health_panel(snap: dict, samples: list[dict], env, csrf: str | None = None,
     def name(g):
         shown = box.plain_text(g.get("bot") or g.get("label") or "").strip()
         return e(shown or box.plain_text(os.path.basename(str(g.get("profile", "")).rstrip("/"))).strip() or "?")
-    def ctl_btn(kind, fields, label):
-        return _ctl(kind, fields, csrf, label) if (control and csrf) else ""
+    def ctl_btn(kind, fields, label, confirm="Confirm"):
+        return _ctl(kind, fields, csrf, label, confirm) if (control and csrf) else ""
 
     if s["browsers"]:
+        names = [name(g) for g in s["browsers"]]
+        labels = _profile_labels(s["browsers"], names)
         parts.append('<h3 class="h-sub">Browsers</h3><div class="h-browsers">'
-                     + "".join(_browser_row(g, name(g), ctl_btn) for g in s["browsers"]) + "</div>")
+                     + "".join(_browser_row(g, n, ctl_btn, names.count(n) > 1, lab)
+                               for g, n, lab in zip(s["browsers"], names, labels)) + "</div>")
     if s["helpers"]:
         rows = []
         for h in s["helpers"]:
