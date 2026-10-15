@@ -5,7 +5,9 @@ The parsers are pure functions over text, so they're tested against fixtures.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import os
 import re
 import socket
@@ -14,6 +16,8 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import unquote, urlsplit
+
+log = logging.getLogger("botroll.health")
 
 HEALTH = ".health.json"  # the rolling store, next to the roll files
 KEEP_SECONDS = 24 * 3600
@@ -173,8 +177,8 @@ def plain_text(text) -> str:
 
 
 def norm_path(path: str) -> str:
-    """A profile path without trailing slashes ("/" stays "/")."""
-    return path.rstrip("/") or path[:1]
+    """A profile path in normal form: no trailing slash, no "." or "x/.." parts ("/" stays "/", "" stays "")."""
+    return os.path.normpath(path) if path else path
 
 
 def _clean_name(text: str) -> str | None:
@@ -268,6 +272,69 @@ def profile_label(user_data_dir: str) -> str | None:
 DEFAULT_LABEL = re.compile(r"Your Chrome|Person \d+|Profile \d+|Default", re.I)
 
 
+SALT_FILE = "~/.botroll/health-salt"
+_salt: bytes | None = None
+
+
+def _install_salt() -> bytes:
+    """A random per-install key (0600), so a profile id can't be computed from a guessed path.
+    The file is opened without following symlinks; a missing, short or unreadable file is (re)created, and an
+    existing one is tightened to 0600 (or replaced if that fails). Only if writing fails is a per-process key
+    used, with a warning (ids then change on restart)."""
+    global _salt
+    if _salt is None:
+        _salt = _load_or_make_salt(os.path.expanduser(SALT_FILE))
+    return _salt
+
+
+def _load_or_make_salt(path: str) -> bytes:
+    import stat
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, os.O_RDONLY | nofollow)
+        try:
+            st = os.fstat(fd)
+            ok = stat.S_ISREG(st.st_mode)
+            if ok and st.st_mode & 0o077:
+                try:
+                    os.fchmod(fd, 0o600)
+                except OSError:
+                    ok = False
+            data = os.read(fd, 64) if ok else b""
+        finally:
+            os.close(fd)
+        if len(data) >= 16:
+            return data
+    except OSError:
+        pass
+    salt = os.urandom(32)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(salt)
+            os.replace(tmp, path)  # replaces a symlink or bad file itself, never what it points at
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+    except OSError as err:
+        log.warning("botroll: could not write %s (%s); using a temporary key, profile ids will change on restart",
+                    path, err)
+    return salt
+
+
+def profile_id(user_data_dir: str) -> str:
+    """A short, stable id for a profile path (HMAC with the per-install salt), so two folders with the same name
+    can be told apart on the board without sending or revealing the path itself."""
+    import hashlib
+    import hmac
+    return hmac.new(_install_salt(), norm_path(user_data_dir).encode("utf-8", "surrogatepass"),
+                    hashlib.sha256).hexdigest()[:8]
+
+
 def resolve_profile(profile: str, cfg: dict, cache: dict | None = None, pid: int | None = None) -> str | None:
     """Map a user-data-dir to a bot name. Never invents a name. In order:
     the browsers map, names_file, the optional profile_resolve command, then the per-display name file."""
@@ -328,7 +395,8 @@ def group_browsers(rows: list[dict], cpu: dict, cfg: dict, at: float | None = No
         g = groups.setdefault(full, {"profile": profile, "bot": None, "label": None, "_full": full,
                                         "procs": 0, "rss_mb": 0, "cpu": 0.0, "port": None,
                                         "main_pid": None, "started_at": None,
-                                        "closable": configured_browser(full, cfg), "_kb": 0})
+                                        "closable": configured_browser(full, cfg),
+                                        "profile_id": profile_id(full), "_kb": 0})
         g["procs"] += 1
         g["_kb"] += r["rss_kb"]
         g["cpu"] = round(g["cpu"] + cpu.get(r["pid"], 0.0), 1)
@@ -629,7 +697,9 @@ def _browser(g) -> dict:
            "port": _opt(g.get("port"), _int, 1, 65535),
            "main_pid": _opt(g.get("main_pid"), _int, 1),
            "started_at": (_opt(g.get("started_at"), _int, 0) if isinstance(g.get("started_at"), int) and g["started_at"] >= 0 else None),
-           "closable": g.get("closable") is True}
+           "closable": g.get("closable") is True,
+           "profile_id": g["profile_id"] if isinstance(g.get("profile_id"), str)
+           and re.fullmatch(r"[0-9a-f]{8}", g["profile_id"]) is not None else None}
     if "tabs" in g:
         out["tabs"] = _opt(g["tabs"], _list, _tab)
     return out

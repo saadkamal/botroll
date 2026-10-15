@@ -3,6 +3,7 @@
 Each guard has a test that goes red when the guard is removed or loosened; see the mutation
 notes in the PR description for the self-check.
 """
+import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import logging
 import os
 import pathlib
