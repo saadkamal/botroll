@@ -1,4 +1,5 @@
 """Close per row, escaped tab origins, node flag lists, and browsers that share a name."""
+import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import os
 import pathlib
 import shutil
@@ -52,15 +53,15 @@ class Panel(unittest.TestCase):
         a3, a9, bob = self.rows(out)
         self.assertIn('<span class="h-br-name">Ann <span class="muted">Fork-3</span>', a3)
         self.assertIn('<span class="h-br-name">Ann <span class="muted">Fork-9</span>', a9)
-        self.assertIn('type="submit">Close Fork-3</button>', a3)
-        self.assertIn('type="submit">Close Fork-9</button>', a9)
+        self.assertIn('type="submit">Close Fork-3 <span class="h-pid">PID 4101</span></button>', a3)
+        self.assertIn('type="submit">Close Fork-9 <span class="h-pid">PID 4202</span></button>', a9)
         self.assertIn('<span class="h-br-name">Kai</span>', bob)  # unique name: unchanged
-        self.assertIn('type="submit">Confirm</button>', bob)
+        self.assertIn('type="submit">Confirm <span class="h-pid">PID 4303</span></button>', bob)
 
     def test_shared_name_profile_escaped(self):
         out = self.panel([self.g('a"<b>', "Ann", 4101), self.g("Fork-9", "Ann", 4202)], csrf="tok", control=True)
         self.assertNotIn("<b>", out)
-        self.assertIn("Close a&quot;&lt;b&gt;</button>", out)
+        self.assertIn('Close a&quot;&lt;b&gt; <span class="h-pid">PID 4101</span></button>', out)
 
     def test_same_name_and_folder_get_distinct_labels(self):
         a = {**self.g("Fork-3", "Ann", 4101), "profile_id": health.profile_id("/home/a/Fork-3")}
@@ -70,8 +71,8 @@ class Panel(unittest.TestCase):
         ra, rb = self.rows(out)
         self.assertIn(f'Ann <span class="muted">Fork-3 #{a["profile_id"]}</span>', ra)
         self.assertIn(f'Ann <span class="muted">Fork-3 #{b["profile_id"]}</span>', rb)
-        self.assertIn(f'type="submit">Close Fork-3 #{a["profile_id"]}</button>', ra)
-        self.assertIn(f'type="submit">Close Fork-3 #{b["profile_id"]}</button>', rb)
+        self.assertIn(f'type="submit">Close Fork-3 #{a["profile_id"]} <span class="h-pid">PID 4101</span></button>', ra)
+        self.assertIn(f'type="submit">Close Fork-3 #{b["profile_id"]} <span class="h-pid">PID 4202</span></button>', rb)
 
     def test_same_folder_without_id_falls_back_to_pid(self):
         out = self.panel([self.g("Fork-3", None, 4101), self.g("Fork-3", None, 4202)], csrf="tok", control=True)
@@ -109,8 +110,8 @@ class Panel(unittest.TestCase):
         ra, rb = self.rows(out)
         self.assertIn(f'Ann <span class="muted">Fork-3 #{pid} pid 4101</span>', ra)
         self.assertIn(f'Ann <span class="muted">Fork-3 #{pid} pid 4202</span>', rb)
-        self.assertIn(f'type="submit">Close Fork-3 #{pid} pid 4101</button>', ra)
-        self.assertIn(f'type="submit">Close Fork-3 #{pid} pid 4202</button>', rb)
+        self.assertIn(f'type="submit">Close Fork-3 #{pid} pid 4101 <span class="h-pid">PID 4101</span></button>', ra)
+        self.assertIn(f'type="submit">Close Fork-3 #{pid} pid 4202 <span class="h-pid">PID 4202</span></button>', rb)
 
     def test_m1_folder_named_like_a_label(self):
         a = {**self.g("Fork-3", "Zoe", 4101), "profile_id": "c23f2ced"}
@@ -120,8 +121,8 @@ class Panel(unittest.TestCase):
         self.assertIn('Zoe <span class="muted">Fork-3 #c23f2ced pid 4101</span>', ra)
         self.assertIn('Zoe <span class="muted">Fork-3 #0123abcd</span>', rb)
         self.assertIn('Zoe <span class="muted">Fork-3 #c23f2ced pid 4303</span>', rc)
-        self.assertIn('type="submit">Close Fork-3 #c23f2ced pid 4101</button>', ra)
-        self.assertIn('type="submit">Close Fork-3 #c23f2ced pid 4303</button>', rc)
+        self.assertIn('type="submit">Close Fork-3 #c23f2ced pid 4101 <span class="h-pid">PID 4101</span></button>', ra)
+        self.assertIn('type="submit">Close Fork-3 #c23f2ced pid 4303 <span class="h-pid">PID 4303</span></button>', rc)
 
     def test_m1_unique_labels_unchanged(self):
         out = self.panel([self.g("Fork-3", "Ann", 4101), self.g("Fork-9", "Max", 4202)], csrf="tok", control=True)

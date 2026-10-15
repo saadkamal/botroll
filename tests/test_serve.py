@@ -1,3 +1,4 @@
+import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import base64
 import hashlib
 import hmac

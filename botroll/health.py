@@ -5,7 +5,9 @@ The parsers are pure functions over text, so they're tested against fixtures.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import os
 import re
 import socket
@@ -14,6 +16,8 @@ import time
 import urllib.error
 import urllib.request
 from urllib.parse import unquote, urlsplit
+
+log = logging.getLogger("botroll.health")
 
 HEALTH = ".health.json"  # the rolling store, next to the roll files
 KEEP_SECONDS = 24 * 3600
@@ -273,26 +277,53 @@ _salt: bytes | None = None
 
 
 def _install_salt() -> bytes:
-    """A random per-install key (created 0600 on first use), so a profile id can't be computed from a guessed
-    path. If the file can't be read or written, a per-process key is used (ids then change on restart)."""
+    """A random per-install key (0600), so a profile id can't be computed from a guessed path.
+    The file is opened without following symlinks; a missing, short or unreadable file is (re)created, and an
+    existing one is tightened to 0600 (or replaced if that fails). Only if writing fails is a per-process key
+    used, with a warning (ids then change on restart)."""
     global _salt
     if _salt is None:
-        path = os.path.expanduser(SALT_FILE)
-        try:
-            with open(path, "rb") as f:
-                _salt = f.read(64)
-        except OSError:
-            _salt = b""
-        if len(_salt) < 16:
-            _salt = os.urandom(32)
-            try:
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-                with os.fdopen(fd, "wb") as f:
-                    f.write(_salt)
-            except OSError:
-                pass
+        _salt = _load_or_make_salt(os.path.expanduser(SALT_FILE))
     return _salt
+
+
+def _load_or_make_salt(path: str) -> bytes:
+    import stat
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, os.O_RDONLY | nofollow)
+        try:
+            st = os.fstat(fd)
+            ok = stat.S_ISREG(st.st_mode)
+            if ok and st.st_mode & 0o077:
+                try:
+                    os.fchmod(fd, 0o600)
+                except OSError:
+                    ok = False
+            data = os.read(fd, 64) if ok else b""
+        finally:
+            os.close(fd)
+        if len(data) >= 16:
+            return data
+    except OSError:
+        pass
+    salt = os.urandom(32)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(salt)
+            os.replace(tmp, path)  # replaces a symlink or bad file itself, never what it points at
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+    except OSError as err:
+        log.warning("botroll: could not write %s (%s); using a temporary key, profile ids will change on restart",
+                    path, err)
+    return salt
 
 
 def profile_id(user_data_dir: str) -> str:

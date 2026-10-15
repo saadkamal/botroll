@@ -1,4 +1,5 @@
 """PR #9 QA round 1: tests that pin the server, collector and name-file guards."""
+import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import contextlib
 import io
 import json

@@ -1,4 +1,5 @@
 """Browser → bot names without setup: names_file, per-display files, then the profile's own label."""
+import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import json
 import os
 import pathlib
