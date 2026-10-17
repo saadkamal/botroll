@@ -1,4 +1,4 @@
-"""QA round 4: labels a folder name can't fake (M2), and the per-install salt (S1, S2, T5)."""
+"""Browser labels a folder name can't fake, and the per-install salt behind profile ids."""
 import tmphome  # noqa: F401
 import os
 import pathlib

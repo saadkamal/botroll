@@ -4,6 +4,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+- Housekeeping: test files named by topic instead of by review round, dead code removed (`Handler.signing_key`, `board._today`, `health.hourly_peaks`, which was a wrapper for `bucket_peaks(..., bucket_min=60)`), `ruff check` in CI with a minimal rule set, the `Private :: Do Not Upload` classifier dropped, and the board screenshots kept once, under `site/`.
 - `botroll push` and `botroll health` retry a dropped connection: always when it dropped before the request was sent, and after sending only for roll files and watchdog flags (never `/api/prune` or health samples). `BOTROLL_RETRIES` (default 3) and `BOTROLL_RETRY_BACKOFF` (default 1 second, doubling, capped at 30) tune it. A drop after sending now fails with a plain error instead of a traceback, so `botroll health --every` keeps running.
 - Public-repo housekeeping: SECURITY.md, CODE_OF_CONDUCT.md, issue and pull request templates, README badges, features, a settings index and a security section.
 - Examples, tests, screenshots and the site use neutral demo names (Ann, Max, Kai, Zoe) and generic paths.

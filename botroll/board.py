@@ -52,12 +52,6 @@ RECENT_HOURS = 24  # closed items count as "recent" for the summary and card "do
 FUTURE_SKEW_MIN = 10  # a stamp this far ahead of the board clock (bot clock drift) still counts as recent
 
 
-def _today(item: Item, at: datetime) -> bool:
-    """Calendar day of `at` (BOTROLL_TZ). Prefer _recent for summaries: midnight resets look empty."""
-    t = parse_time(item.get("updated"))
-    return bool(t and t.date() == at.date())
-
-
 def _recent(item: Item, at: datetime, hours: float = RECENT_HOURS) -> bool:
     """True when updated within the last `hours` (rolling), using the same naive BOTROLL_TZ clock."""
     t = parse_time(item.get("updated"))
@@ -122,7 +116,10 @@ def needs_you(snap: dict) -> list[tuple[dict, dict]]:
 def card(bot: dict, flags: list[dict]) -> dict:
     """What one bot's card shows. Rows are (kind, label, text, meta)."""
     its = bot["items"]
-    of = lambda state: [i for i in its if i["state"] == state]
+
+    def of(state):
+        return [i for i in its if i["state"] == state]
+
     doing = sorted(of("doing"), key=_mins)
     live = [i for i in doing if not i["stale"]]
     current = (live or doing or [None])[0]

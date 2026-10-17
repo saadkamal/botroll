@@ -11,7 +11,7 @@
 
 An agent-first task list. Every bot records what it's doing, what's done, and what it's waiting on you for, in plain files you can read and edit. One command shows you the whole team.
 
-<img alt="The BotRoll board" src="docs/board-desktop.png" width="760">
+<img alt="The BotRoll board" src="site/board-desktop.png" width="760">
 
 If you run several AI assistants, each one's commitments live only in its chat, and things fall through:
 
@@ -114,7 +114,7 @@ The summary sentence counts **open** work and what **got done in the last 24 hou
 
 The board puts one sentence on top ("4 things need you. 5 bots are working (Max has gone quiet), 3 items are stuck, and 6 got done today."). Below it is what's waiting on you, oldest first ("Ann · T-8"), then a card per bot, titled with its name and role ("Ann · Chief of Staff"), showing what it's doing now, its asks, and anything stuck. An outlined "No owner" card holds runaway processes that no item claims. On a phone, each card's done items collapse to one line.
 
-<img alt="The board on a phone" src="docs/board-phone.png" width="300">
+<img alt="The board on a phone" src="site/board-phone.png" width="300">
 
 The page is one self-contained HTML file. It makes no network requests, follows your light or dark setting, and reloads itself every minute. To keep it current, regenerate it on a schedule and put it somewhere your phone can reach, such as a synced folder or a static file server on your tailnet:
 

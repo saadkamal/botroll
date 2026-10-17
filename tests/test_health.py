@@ -174,10 +174,10 @@ class Store(unittest.TestCase):
         pathlib.Path(self.d, health.HEALTH).write_text("{nope")
         self.assertEqual(health.load(self.d), [])
 
-    def test_hourly_peaks_attribute_bot(self):
+    def test_hourly_buckets_attribute_bot(self):
         t = 1_800_000_000
         samples = [self.base | {"ts": t - 60, "load": [4.0, 1, 1]}, self.base | {"ts": t - 120}]
-        peaks = health.hourly_peaks(samples, t)
+        peaks = health.bucket_peaks(samples, t, bucket_min=60)
         self.assertEqual(len(peaks), 24)
         self.assertEqual((peaks[-1]["load"], peaks[-1]["bot"]), (38.12, "researcher"))
         self.assertIsNone(peaks[0])
@@ -267,7 +267,7 @@ class Api(test_serve.Server):
         self.assertNotIn("Box health", self.request("GET", "/", cookies=self.session()).body)
 
 
-# Kai's post-release findings on #5 ------------------------------------------------
+# Ingest and redaction hardening ---------------------------------------------------
 
 def good(ts=1_800_000_000):
     return sample_at(ts)
@@ -286,7 +286,6 @@ class Hardening(unittest.TestCase):
         snap = {"generated": "2027-01-15 19:00", "health": samples}
         return health_panel(snap)
 
-    # H1
     def test_h1_pid_injection_is_rejected_at_ingest(self):
         s = good(self.now)
         s["helpers"][0]["pid"] = '<a href="https://evil.example">x</a>'
@@ -308,7 +307,6 @@ class Hardening(unittest.TestCase):
         self.assertNotIn("<a href", html)
         self.assertIn("&lt;a href=&quot;https://evil.example&quot;&gt;", html)
 
-    # H2
     def test_h2_string_numbers_and_text_tabs_rejected(self):
         for path in [("browsers", 0, "cpu"), ("browsers", 0, "rss_mb"), ("helpers", 0, "elapsed_s"),
                      ("browsers", 0, "tabs")]:
@@ -337,7 +335,7 @@ class Hardening(unittest.TestCase):
         self.assertEqual(c.exception.status, 422)
         self.put(good(self.now + 60))
 
-    # M1 (token assembled from pieces so secret scanners do not flag a fake)
+    # The token below is assembled from pieces so secret scanners don't flag a fake.
     def test_m1_userinfo_stripped_from_tab_origins(self):
         raw = json.dumps([{"type": "page", "title": "t",
                            "url": "https://x-access-token:" + FAKE_TOKEN + "@github.com:8443/a?b"}])
@@ -346,7 +344,6 @@ class Hardening(unittest.TestCase):
         self.assertNotIn("ghp_", json.dumps(tabs))
         self.assertEqual(health.origin("http://user:pw@[::1]:9/x"), "http://[::1]:9")
 
-    # L1
     def test_l1_store_total_size_is_capped(self):
         with mock.patch.object(health, "MAX_STORE", 3 * len(json.dumps(health.clean(good())))):
             for i in range(6):
@@ -362,7 +359,6 @@ class Hardening(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.put(s)
 
-    # L2
     def test_l2_unknown_fields_dropped(self):
         s = good(self.now) | {"evil": 1}
         s["browsers"][0]["script"] = "<script>"
@@ -392,7 +388,6 @@ class Hardening(unittest.TestCase):
                 self.put(good(ts))
             self.assertEqual(c.exception.status, 409)
 
-    # L3
     def test_l3_command_lines_redacted(self):
         before, after = rows()
         after = after + [{"pid": 900, "ppid": 1, "rss_kb": 1, "elapsed_s": 1, "cpu_s": 0,
@@ -426,7 +421,7 @@ class Hardening(unittest.TestCase):
         self.assertNotIn("s3cret", json.dumps(health.parse_tabs(json.dumps([{"type": "page", "title": url,
                                                                                "url": url}]).encode())))
 
-    # N1, round 2: safe by construction
+    # Tab titles: safe by construction
     def tab(self, title, url):
         return health.parse_tabs(json.dumps([{"type": "page", "title": title, "url": url}]).encode())[0]["title"]
 
@@ -467,12 +462,12 @@ class Hardening(unittest.TestCase):
         self.assertEqual(self.tab("Local dashboard", url), "Local dashboard")
 
     def test_n1_normal_titles(self):
-        self.assertEqual(self.tab("GitHub - saadkamal/botroll", "https://github.com/"), "GitHub - saadkamal/botroll")
+        self.assertEqual(self.tab("GitHub - octo/project", "https://github.com/"), "GitHub - octo/project")
         self.assertEqual(self.tab("Inbox (3) - Gmail", "https://mail.google.com/u/0/"), "Inbox (3) - Gmail")
         # (c) is a plain substring check, so a word that is also a path segment drops the title: /mail/ vs "Gmail".
         self.assertEqual(self.tab("Inbox (3) - Gmail", "https://mail.google.com/mail/u/0/"), "mail.google.com")
         # Documented trade-off: a title that repeats a 4+ character path segment is dropped (safety first).
-        self.assertEqual(self.tab("GitHub - saadkamal/botroll", "https://github.com/saadkamal/botroll"), "github.com")
+        self.assertEqual(self.tab("GitHub - octo/project", "https://github.com/octo/project"), "github.com")
 
     # N5
     def test_n5_replays_keyed_on_host_and_time(self):
@@ -499,9 +494,8 @@ class Hardening(unittest.TestCase):
         self.assertTrue(health.valid(s))
         self.assertEqual(self.put(s), 1)
 
-    # I1
     def test_i1_chart_includes_the_newest_sample(self):
-        peaks = health.hourly_peaks([health.clean(good(self.now)) | {"load": [30.0, 1, 1]}], self.now)
+        peaks = health.bucket_peaks([health.clean(good(self.now)) | {"load": [30.0, 1, 1]}], self.now, bucket_min=60)
         self.assertIsNotNone(peaks[-1])
         self.assertEqual(peaks[-1]["load"], 30.0)
 
