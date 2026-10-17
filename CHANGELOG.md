@@ -13,6 +13,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Test modules can be run on their own by dotted name (`python3 -m unittest tests.test_serve`), and `test_push_url_alias` no longer depends on `BOTROLL_*` variables in your environment.
 - `/health` reports the running version and commit (`ok`, then `version: 0.1.0` and `commit: <id>`) and sends `X-BotRoll-Version: 0.1.0+<12-char commit>`. The commit is baked in at build time: `git archive` stamps it via `export-subst`, the Dockerfile takes `--build-arg GIT_SHA=…` (or Railway's commit variable), and `BOTROLL_COMMIT` overrides it. The first line is still `ok`, so existing health checks keep working.
 - The Railway steps deploy a `git archive` of a named commit with `railway up <dir> -p <project-id>`, and a missing line continuation in the `railway variables` example is fixed.
+- `GET /api/health/commands` no longer changes anything. Commands queued while Box health control was on are cancelled when the server starts with it off (also when `BOTROLL_HEALTH` is off), which is the only time control can change.
+- Every response has a `Permissions-Policy` header that turns off browser features the board doesn't use.
+- Opt-in `BOTROLL_HOST_COOKIES=1` gives the cookies the `__Host-` prefix. It needs https, and turning it on signs everyone out once.
+- Opt-in `BOTROLL_HEALTH_TOKEN`: when set, the only token the `/api/health` routes accept, and refused everywhere else. `botroll health` sends it ahead of `BOTROLL_PUSH_TOKEN`.
+- `botroll push --prune --dry-run` never deletes, and warns and exits 3 when anything would be removed. Plain `--prune` is unchanged.
 - `botroll push` and `botroll health` retry a dropped connection: always when it dropped before the request was sent, and after sending only for roll files and watchdog flags (never `/api/prune` or health samples). `BOTROLL_RETRIES` (default 3) and `BOTROLL_RETRY_BACKOFF` (default 1 second, doubling, capped at 30) tune it. A drop after sending now fails with a plain error instead of a traceback, so `botroll health --every` keeps running.
 - Public-repo housekeeping: SECURITY.md, CODE_OF_CONDUCT.md, issue and pull request templates, README badges, features, a settings index and a security section.
 - Examples, tests, screenshots and the site use neutral demo names (Ann, Max, Kai, Zoe) and generic paths.

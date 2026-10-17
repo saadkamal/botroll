@@ -51,7 +51,11 @@ SESSION_FILE = ".session"  # integer version mixed into the cookie key; bumped o
 FINDINGS = ".watch.json"  # the last pushed process flags, next to the roll files
 PROCESS_KINDS = ("pid", "cpu", "capture")  # flags only the bots' machine can see
 SECURITY = [("Cache-Control", "no-store"), ("X-Robots-Tag", "noindex, nofollow"), ("X-Frame-Options", "DENY"),
-            ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer")]
+            ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer"),
+            # The board uses none of these browser features; deny them to the page and anything it might embed.
+            ("Permissions-Policy", "accelerometer=(), browsing-topics=(), camera=(), display-capture=(), "
+                                   "geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), "
+                                   "payment=(), publickey-credentials-get=(), serial=(), usb=(), xr-spatial-tracking=()")]
 
 
 def _sha256_b64(text: str) -> str:
@@ -126,6 +130,25 @@ class Config:
     board_url: str | None = None
     health: bool = False  # POST /api/health accepts samples only when BOTROLL_HEALTH is set
     health_control: bool = False  # owner Close/Stop; needs BOTROLL_HEALTH_CONTROL=1
+    health_token: str | None = None  # BOTROLL_HEALTH_TOKEN: when set, the only token for /api/health*
+    host_cookies: bool = False  # BOTROLL_HOST_COOKIES=1: cookie names get the __Host- prefix
+
+
+HEALTH_ROUTE = re.compile(r"/api/health(/.*)?")
+
+
+def cookie_name(cfg: Config, name: str) -> str:
+    """The cookie's name on the wire: with BOTROLL_HOST_COOKIES the browser enforces __Host- (Secure, Path=/, no
+    Domain), so a sibling subdomain or a plain-http page can't set or shadow it."""
+    return "__Host-" + name if cfg.host_cookies else name
+
+
+def token_for(cfg: Config, path_: str) -> str | None:
+    """The one Bearer token an /api/ route takes: BOTROLL_HEALTH_TOKEN for /api/health and its sub-routes when it
+    is set (the push token is then refused there, and it is refused everywhere else), else BOTROLL_PUSH_TOKEN."""
+    if cfg.health_token and HEALTH_ROUTE.fullmatch(path_):
+        return cfg.health_token
+    return cfg.push_token
 
 
 def session_version(data: str) -> int:
@@ -172,6 +195,16 @@ def configure(data: str, env=os.environ, insecure_local: bool = False, behind_pr
         raise ValueError("BOTROLL_PUSH_TOKEN must be at least 32 characters")
     if token and (token == secret or (password and token == password)):
         raise ValueError("BOTROLL_PUSH_TOKEN must be different from the password and BOTROLL_SECRET")
+    health_token = env.get("BOTROLL_HEALTH_TOKEN") or None
+    if health_token is not None:
+        if len(health_token) < 32:
+            raise ValueError("BOTROLL_HEALTH_TOKEN must be at least 32 characters")
+        if health_token in (secret, token) or (password and health_token == password):
+            raise ValueError("BOTROLL_HEALTH_TOKEN must be different from the password, BOTROLL_SECRET "
+                             "and BOTROLL_PUSH_TOKEN")
+    host_cookies = _on(env.get("BOTROLL_HOST_COOKIES"))
+    if host_cookies and (insecure_local or insecure_http):
+        raise ValueError("BOTROLL_HOST_COOKIES needs Secure cookies: not with --insecure-local or --insecure-http")
     if client_ip_header is not None:
         header = client_ip_header.strip()
     else:
@@ -180,8 +213,11 @@ def configure(data: str, env=os.environ, insecure_local: bool = False, behind_pr
     return Config(data, hashed, secret.encode(), token, insecure_local, behind_proxy, insecure_http, header,
                   auth_id, session_version(data), notify.configure(env),
                   actions.load(data, env), board_url,
-                  (env.get("BOTROLL_HEALTH") or "").strip().lower() in ("1", "true", "yes", "on"),
-                  (env.get("BOTROLL_HEALTH_CONTROL") or "").strip().lower() in ("1", "true", "yes", "on"))
+                  _on(env.get("BOTROLL_HEALTH")), _on(env.get("BOTROLL_HEALTH_CONTROL")), health_token, host_cookies)
+
+
+def _on(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 # Pages -------------------------------------------------------------------------
@@ -398,9 +434,11 @@ def _peek_kind(request, cfg: Config | None = None) -> str:
     if cfg.insecure_local:
         return "auth"
     fields = _raw_headers(headers)
-    if _session_ok(cfg, _cookie_value(fields.get("cookie", ""), SESSION)):
+    if _session_ok(cfg, _cookie_value(fields.get("cookie", ""), cookie_name(cfg, SESSION))):
         return "auth"
-    if cfg.push_token and _bearer(fields.get("authorization", ""), cfg.push_token):
+    route = path.decode("latin-1")
+    want = token_for(cfg, route) if route.startswith("/api/") else None
+    if want and _bearer(fields.get("authorization", ""), want):
         return "auth"
     return "unknown"
 
@@ -587,10 +625,10 @@ class Handler(BaseHTTPRequestHandler):
         return _sign(self.cfg, text)
 
     def cookie(self, name: str) -> str:
-        return _cookie_value(self.headers.get("Cookie", ""), name)
+        return _cookie_value(self.headers.get("Cookie", ""), cookie_name(self.cfg, name))
 
     def set_cookie(self, name: str, value: str, max_age: int | None = None) -> tuple[str, str]:
-        parts = [f"{name}={value}", "Path=/", "HttpOnly", "SameSite=Lax"]
+        parts = [f"{cookie_name(self.cfg, name)}={value}", "Path=/", "HttpOnly", "SameSite=Lax"]
         parts += [] if self.cfg.insecure_local or self.cfg.insecure_http else ["Secure"]
         parts += [] if max_age is None else [f"Max-Age={max_age}"]
         return "Set-Cookie", "; ".join(parts)
@@ -849,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
             return accepted or len(window) <= HEALTH_BAD_PER_MINUTE
 
     def api(self, method: str, path_: str) -> None:
-        token = self.cfg.push_token
+        token = token_for(self.cfg, path_)
         if not token:
             return self.json(404, {"error": "the push API is off: set BOTROLL_PUSH_TOKEN"})
         if not _bearer(self.headers.get("Authorization", ""), token):
@@ -857,8 +895,7 @@ class Handler(BaseHTTPRequestHandler):
         bot = re.fullmatch(r"/api/roll/([^/]+)", path_)
         if path_ == "/api/health/commands" and method == "GET":
             if not (self.cfg.health and self.cfg.health_control):
-                health.clear_pending(self.cfg.data)  # nothing queued earlier may run once control is back on
-                return self.json(404, {"error": "health control is off"})
+                return self.json(404, {"error": "health control is off"})  # a GET changes nothing; see clear_stale
             return self.json(200, {"commands": health.pending_commands(self.cfg.data)})
         if path_ == "/api/health/commands/result" and method == "POST":
             if not (self.cfg.health and self.cfg.health_control):
@@ -1017,10 +1054,16 @@ def ensure_data(data: str) -> None:
         raise ValueError(f"data directory {data} isn't writable (need write access, typically uid {UID}): {e}") from None
 
 
+def clear_stale(cfg: Config) -> int:
+    """At startup: with control off (BOTROLL_HEALTH or BOTROLL_HEALTH_CONTROL unset), cancel any command queued
+    while it was on, so none can run once it's turned back on. Control can only change with a restart, so this is
+    the one place it's needed (GET /api/health/commands no longer does it). Returns how many were cancelled."""
+    return 0 if cfg.health and cfg.health_control else health.clear_pending(cfg.data)
+
+
 def serve(cfg: Config, port: int) -> None:
     ensure_data(cfg.data)
-    if not cfg.health_control:
-        health.clear_pending(cfg.data)  # commands queued while control was on must not survive a restart
+    clear_stale(cfg)
     server = make_server(cfg, port)
     host, port = server.server_address[:2]
     zone = os.environ.get("TZ") or os.environ.get("BOTROLL_TZ") or "UTC"
@@ -1032,6 +1075,9 @@ def serve(cfg: Config, port: int) -> None:
               "anyone on this network can steal a sign-in", file=sys.stderr)
     if not cfg.push_token:
         print("botroll: the push API is off; set BOTROLL_PUSH_TOKEN to enable it", file=sys.stderr)
+    if cfg.health_token:
+        print("botroll: /api/health* takes BOTROLL_HEALTH_TOKEN only (the push token is refused there)",
+              file=sys.stderr)
     if cfg.actions:
         names = sorted(actions.bots_only(cfg.actions))
         if names:

@@ -69,12 +69,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="also list roll files on the server for bots that aren't in --dir (a dry run)")
     s.add_argument("--yes", action="store_true",
                    help="with --prune: delete them (at most 3 per push, never more than half the bots)")
+    s.add_argument("--dry-run", action="store_true",
+                   help="with --prune: never delete, warn on stderr and exit 3 if any roll file would be removed")
     s = cmd("health", "sample this machine's memory, load, browsers and heavy jobs (see README: Box health)")
     s.add_argument("--config", default=os.environ.get("BOTROLL_HEALTH_CONFIG"),
                    help="JSON settings (default: $BOTROLL_HEALTH_CONFIG); see botroll-health.json.example")
     s.add_argument("--url", default=os.environ.get("BOTROLL_PUSH_URL") or os.environ.get("BOTROLL_URL"),
                    help="push to this server (default: $BOTROLL_PUSH_URL); without it, store in --dir")
-    s.add_argument("--token", default=os.environ.get("BOTROLL_PUSH_TOKEN"), help="default: $BOTROLL_PUSH_TOKEN")
+    s.add_argument("--token", default=os.environ.get("BOTROLL_HEALTH_TOKEN") or os.environ.get("BOTROLL_PUSH_TOKEN"),
+                   help="default: $BOTROLL_HEALTH_TOKEN, else $BOTROLL_PUSH_TOKEN")
     s.add_argument("--every", type=int, default=0, metavar="SECONDS",
                    help="keep sampling every SECONDS (e.g. 60) instead of once")
     s.add_argument("--print", action="store_true", help="also print each snapshot as JSON")
@@ -142,18 +145,24 @@ def run(a: argparse.Namespace) -> int:
         if not a.url or not a.token:
             raise ValueError("push needs --url and --token, or BOTROLL_PUSH_URL and BOTROLL_PUSH_TOKEN")
         removed: list[str] = []
-        if a.yes and not a.prune:
-            raise ValueError("--yes only goes with --prune")
+        if (a.yes or a.dry_run) and not a.prune:
+            raise ValueError(f"{'--yes' if a.yes else '--dry-run'} only goes with --prune")
+        if a.yes and a.dry_run:
+            raise ValueError("--yes and --dry-run can't go together")
         rolls, findings, skipped = serve.push(a.url, a.token, d, prune=a.prune, removed=removed, confirm=a.yes)
         verb = "pruned" if a.yes else "would prune (dry run; add --yes to delete)"
         print(f"pushed {rolls} roll file{'s' * (rolls != 1)} and {findings} finding{'s' * (findings != 1)}"
               + (f"; {verb} {len(removed)}" + (f": {', '.join(removed)}" if removed else "") if a.prune else ""))
+        if a.dry_run and removed:
+            print(f"botroll: warning: --prune --yes would remove {len(removed)} roll file"
+                  f"{'s' * (len(removed) != 1)} from the server: {', '.join(removed)}", file=sys.stderr)
+            return 3
         if skipped:
             return 1
     elif a.cmd == "health":
         cfg = health.load_config(a.config)
         if a.url and not a.token:
-            raise ValueError("health --url needs --token or BOTROLL_PUSH_TOKEN")
+            raise ValueError("health --url needs --token, BOTROLL_HEALTH_TOKEN or BOTROLL_PUSH_TOKEN")
         if cfg.get("control") and not a.url:
             print("botroll: control: true needs --url to pull commands", file=sys.stderr)
         return health.collect(cfg, d, a.url, a.token, a.every, a.print)

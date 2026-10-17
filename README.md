@@ -97,7 +97,7 @@ botroll list  [bot...] [--all]          open items under each bot's name and rol
 botroll watch                           the watchdog; exits 1 if anything is flagged
 botroll board [--html FILE | --json]    the human view
 botroll serve [--port N] [--data DIR]   the live board behind a password, and the push API (see Self-host)
-botroll push  [--url URL] [--token T] [--prune [--yes]]   upload every roll file and the watchdog's process flags to a server
+botroll push  [--url URL] [--token T] [--prune [--yes | --dry-run]]   upload every roll file and the watchdog's process flags to a server
 botroll health [--every 60] [--config F] sample the machine: memory, load, browsers, helpers, heavy jobs (see Box health)
 botroll hash-password                   read a password, print a hash for BOTROLL_PASSWORD_HASH
 botroll email test                      send a test email with the server's email settings (see Email)
@@ -232,6 +232,10 @@ A dropped connection is retried, so one flaky network hop doesn't fail the whole
 
 A bot's file stays on the server after you delete or rename it locally. `botroll push --prune` also calls `POST /api/prune` (same push token) with the slugs it just pushed and prints the roll files the server *would* delete: it's a dry run. `botroll push --prune --yes` sends `"confirm": true` and the server deletes them, within limits kept in `.prune.json` in the data directory: at most 3 deletions an hour across all calls, never below half the bots there were at the start of the hour, never more than half the bots in one call, and never the last bot. The budget is saved before anything is deleted. If `.prune.json` is missing, unreadable or dated in the future, or the clock has gone backwards, the server fails closed: it starts a fresh hour with the budget already used up, so the first confirmed prune on a new server waits an hour. Over a limit it answers 409 and deletes nothing, so a wrong keep list can't wipe the board. It also refuses an empty list.
 
+For a scheduled push, `botroll push --prune --dry-run` never deletes, and when anything *would* be removed it prints a warning to stderr and exits with status `3` (otherwise as usual: `0`, or `1` if a roll file was skipped). A cron job or a systemd timer then shows you a bot that went missing before anything is gone. `--dry-run` needs `--prune` and can't go with `--yes`. Plain `--prune` is unchanged.
+
+There is one push token for all bots. A per-bot token, limited to that bot's `/api/roll/<slug>`, is not supported yet: `botroll push` sends every roll file from one machine with one token, and `/api/prune` and `/api/watch` work across bots, so a per-bot token would only help bots that push on their own.
+
 A bot whose file you delete locally stays on the board until you delete its file from the server's volume. On Railway:
 
 ```sh
@@ -256,6 +260,7 @@ On Docker, the same path is on the `botroll-data` volume.
 | `BOTROLL_URL` | on the server: the board's https address, linked from emails. On the bots' machine: an alias for `BOTROLL_PUSH_URL` |
 | `BOTROLL_PUSH_URL` | where `botroll push` sends files. Prefer this over `BOTROLL_URL` on the bots' machine |
 | `BOTROLL_CLIENT_IP_HEADER` | client-address header to trust when `--behind-proxy` is set. Default: none (the socket peer). Set `X-Real-IP` on Railway, or when Caddy/nginx overwrite that header |
+| `BOTROLL_HOST_COOKIES` | `1`/`true`/`yes`/`on` to name the cookies `__Host-botroll_session` and so on. Browsers then refuse to let a sibling subdomain or a plain-http page set or shadow them. Off by default. Needs https (not with `--insecure-http` or `--insecure-local`), and turning it on signs everyone out once |
 | `BOTROLL_ACTIONS` | path to an actions file (default `$BOTROLL_DATA/actions.json`). Missing file: the feature is off |
 | `BOTROLL_ACTION_<SLUG>_URL` | per-bot action URL, slug in `SCREAMING_SNAKE` (`assistant` → `ASSISTANT`, `my-bot` → `MY_BOT`) |
 | `BOTROLL_ACTION_<SLUG>_SECRET` | HMAC secret for that bot. Required unless `_HEADER` is set |
@@ -558,6 +563,7 @@ Set these on whatever renders the board (`botroll serve`, or `botroll board`):
 | `BOTROLL_HEALTH_LOAD_AMBER`, `BOTROLL_HEALTH_LOAD_RED` | `1.0`, `2.0` | 1-minute load as a multiple of the core count |
 | `BOTROLL_HEALTH_BUCKET_MIN` | `30` | chart bar width in minutes: `5`, `10`, `15`, `30` or `60`. Each bar is the peak load in that window and the busiest browser then |
 | `BOTROLL_HEALTH_CONTROL` | off | on the server: `1` enables owner Close/Stop (collector must also set `"control": true`) |
+| `BOTROLL_HEALTH_TOKEN` | unset | on the server: when set (32+ characters, different from the push token, password and secret), the only token `/api/health`, `/api/health/commands` and `/api/health/commands/result` accept; the push token is refused there and this one everywhere else. On the collector: what `botroll health` sends, ahead of `BOTROLL_PUSH_TOKEN`. Unset: the push token does both, as before |
 
 ## Configuration
 
@@ -590,8 +596,9 @@ A filled-in template for a server lives in [`botroll.env.example`](botroll.env.e
 BotRoll treats everything a bot writes as untrusted, and the server as something that will be found on the internet.
 
 - One password (12+ characters), stored as an scrypt hash; signed, expiring session cookies that sign-out and password changes revoke; CSRF tokens on every form; 5 failed sign-ins per IP per 15 minutes.
-- Strict headers on every page: no caching, no indexing, no framing, and a Content Security Policy that runs only the board's own script.
-- A separate push token, so a leaked token can change what the board says but can't sign anyone in.
+- Strict headers on every page: no caching, no indexing, no framing, a Permissions-Policy that turns off camera, microphone, location, payment and similar browser features, and a Content Security Policy that runs only the board's own script.
+- A separate push token, so a leaked token can change what the board says but can't sign anyone in. Optionally a separate `BOTROLL_HEALTH_TOKEN` for the Box health collector, so the machine that runs it never holds the token that writes roll files.
+- Optionally (`BOTROLL_HOST_COOKIES=1`) `__Host-` cookie names, which browsers only accept over https, for the whole site, and never from a sibling subdomain.
 - Bot text is escaped everywhere and defanged in email; action URLs are https-only and refuse private addresses unless you opt in; actions are HMAC-signed.
 - Box health redacts command lines and tab URLs, and Close/Stop are off unless both the server and the collector turn them on.
 - The watchdog never kills a process.
