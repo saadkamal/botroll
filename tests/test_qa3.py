@@ -24,7 +24,7 @@ def realtmp(test):
     return d
 
 
-class Stop(Exception):
+class Stop(BaseException):  # escapes the collector loop, which logs and survives any Exception
     pass
 
 

@@ -527,6 +527,10 @@ Or cron, once a minute:
 
 A sample takes about 3 seconds and a fraction of a core.
 
+With `--every`, one bad minute never stops the collector. A sample that fails or times out (a hung `ps`, say), a push that can't get through, or a command poll that drops is logged and the next sample follows; only Ctrl-C or a stop signal ends it. `Restart=always` above still covers a crash of Python itself. Every line it writes to stderr starts with an ISO 8601 time and the machine's UTC offset (`2026-10-10T15:30:00+11:00 botroll: …`), so a log says when each thing happened. When a sample starts more than twice `--every` after it was due, it logs `stalled N s`, with how far the monotonic clock moved meanwhile: about `--every` when the whole machine was paused or suspended, about `N` when the process itself was stuck. That turns a silent gap on the board into a line in the log.
+
+Close/Stop command polls and result reports (see `control` under [Config](#config)) are sent like pushes: they never follow a redirect, so the push token is never resent to another address, and a dropped connection is retried. Retrying a report is safe, because the server keeps the first result for a command and answers a repeat with it. If a report still can't get through, the command stays pending on the server and comes back on the next poll; the collector remembers what it already ran (by command id and nonce, the last 64) and reports that result again instead of running the Close or Stop a second time.
+
 The server checks each sample strictly: unknown fields are dropped, and wrong types, NaN, Infinity or booleans where numbers belong get a 400. A sample over 64 KiB gets a 413. A time more than 60 seconds ahead or older than 24 hours gets a 422, and a time not newer than the last stored sample (a replay) gets a 409. It takes at most 6 samples a minute (429 after that). The store keeps 24 hours and at most 4 MiB, dropping the oldest first. A stored sample that can't be read is skipped rather than breaking the board. The board warns when the newest sample is over 10 minutes old.
 
 ### Thresholds
@@ -551,7 +555,7 @@ Set these on whatever renders the board (`botroll serve`, or `botroll board`):
 | `BOTROLL_TZ` | the machine's zone | the timezone times are read and written in, such as `Europe/London` |
 | `BOTROLL_PUSH_URL`, `BOTROLL_PUSH_TOKEN` | | where `botroll push` sends files, and the token it sends. `BOTROLL_URL` is accepted as an alias for the push URL |
 | `BOTROLL_HEALTH_CONFIG` | | the JSON settings file for `botroll health` (see [Box health](#box-health-optional)) |
-| `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF` | `3`, `1` | how often `botroll push` and `botroll health` retry a dropped connection, and the first wait in seconds (doubling, at most 30). `0` retries turns it off. See [Pushing](#pushing-from-the-bots-machine) |
+| `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF` | `3`, `1` | how often a dropped connection is retried, and the first wait in seconds (doubling, at most 30), for every request `botroll push` and `botroll health` make: roll files, watchdog flags and prune, the Box health sample, and the Close/Stop command poll and its result reports. `0` retries turns it off. See [Pushing](#pushing-from-the-bots-machine) and [Running it](#running-it) |
 
 The server's settings are under [Self-host](#self-host).
 

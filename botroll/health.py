@@ -13,7 +13,6 @@ import re
 import socket
 import subprocess
 import time
-import urllib.error
 import urllib.request
 from urllib.parse import unquote, urlsplit
 
@@ -1241,36 +1240,36 @@ def terminate(pid: int, wait: float = KILL_WAIT) -> str:
     return "killed"
 
 
-def fetch_commands(url: str, token: str) -> list[dict]:
-    """GET /api/health/commands with the push token."""
+def _https_or_local(url: str, what: str) -> None:
     parts = urlsplit(url)
     if parts.scheme != "https" and parts.hostname not in ("localhost", "127.0.0.1", "::1"):
-        raise ValueError("refusing to fetch commands without https")
+        raise ValueError(f"refusing to {what} without https")
+
+
+def fetch_commands(url: str, token: str) -> list[dict]:
+    """GET /api/health/commands with the push token.
+
+    Sent like every other push-token request: no redirects (the token is never resent to another
+    URL) and dropped connections retried, since a GET changes nothing on the server."""
+    from .serve import _NoRedirect, send
+    _https_or_local(url, "fetch commands")
     req = urllib.request.Request(url.rstrip("/") + "/api/health/commands", method="GET",
                                  headers={"Authorization": f"Bearer {token}"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        raise ValueError(f"/api/health/commands: {e.code} {e.read().decode(errors='replace').strip()}") from None
-    except urllib.error.URLError as e:
-        raise ValueError(f"can't reach {url}: {e.reason}") from None
-    return data if isinstance(data, list) else data.get("commands") or []
+    data = json.loads(send(urllib.request.build_opener(_NoRedirect), req, idempotent=True, timeout=15).decode())
+    if isinstance(data, list):
+        return data
+    return (data.get("commands") or []) if isinstance(data, dict) else []
 
 
 def report_command(url: str, token: str, cid: str, status: str, detail: str = "", nonce: str = "") -> None:
+    """POST a command's result. Safe to retry after a lost reply: the server records the first result
+    for an id (with its nonce) and answers a repeat with the row it already has."""
+    from .serve import _NoRedirect, send
+    _https_or_local(url, "report")
     body = json.dumps({"id": cid, "nonce": nonce, "status": status, "detail": detail}).encode()
-    parts = urlsplit(url)
-    if parts.scheme != "https" and parts.hostname not in ("localhost", "127.0.0.1", "::1"):
-        raise ValueError("refusing to report without https")
     req = urllib.request.Request(url.rstrip("/") + "/api/health/commands/result", data=body, method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    try:
-        urllib.request.urlopen(req, timeout=15).close()
-    except urllib.error.HTTPError as e:
-        raise ValueError(f"/api/health/commands/result: {e.code}") from None
-    except urllib.error.URLError as e:
-        raise ValueError(f"can't reach {url}: {e.reason}") from None
+    send(urllib.request.build_opener(_NoRedirect), req, idempotent=True, timeout=15)
 
 
 def run_commands(cfg: dict, commands: list[dict], sample: dict | None = None, at: float | None = None,
@@ -1300,3 +1299,158 @@ def run_commands(cfg: dict, commands: list[dict], sample: dict | None = None, at
         out.append({**res, "status": "ok" if detail in ("terminated", "killed", "already gone") else "failed",
                     "detail": detail})
     return out
+
+
+# The collector loop --------------------------------------------------------------
+
+def stamp(at: float | None = None) -> str:
+    """An ISO 8601 time with the machine's UTC offset, e.g. 2026-10-17T22:18:27+11:00."""
+    from datetime import datetime
+    return datetime.fromtimestamp(time.time() if at is None else at).astimezone().isoformat(timespec="seconds")
+
+
+class Stamped:
+    """A text stream that starts every line written to it with stamp(), so a long-running collector's
+    log says when each thing happened. Partial writes are joined: only the start of a line is stamped."""
+
+    def __init__(self, stream, clock=None):
+        self._stream, self._clock, self._fresh = stream, clock or time.time, True
+
+    def write(self, text: str) -> int:
+        out = []
+        for piece in text.splitlines(keepends=True):
+            if self._fresh:
+                out.append(stamp(self._clock()) + " ")
+            out.append(piece)
+            self._fresh = piece.endswith(("\n", "\r"))
+        self._stream.write("".join(out))
+        return len(text)
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+    def __getattr__(self, name):  # flush, fileno, isatty, encoding, ... come from the real stream
+        return getattr(self._stream, name)
+
+
+@contextlib.contextmanager
+def stamped_stderr(clock=None):
+    """Stamp every stderr line (prints, warnings, retries) until the block ends."""
+    import sys
+    real = sys.stderr
+    sys.stderr = Stamped(real, clock or time.time)
+    try:
+        yield sys.stderr
+    finally:
+        sys.stderr = real
+
+
+def _say(message: str) -> None:
+    import sys
+    print(f"botroll: {message}", file=sys.stderr, flush=True)
+
+
+def _why(e: BaseException) -> str:
+    """A one-line reason. ValueErrors from this package already read as sentences."""
+    return str(e) if type(e) is ValueError else f"{type(e).__name__}: {e}"
+
+
+def collect(cfg: dict, directory: str, url: str | None = None, token: str | None = None, every: int = 0,
+            show: bool = False, *, iterations: int | None = None, wall=None, mono=None, sleep=None) -> int:
+    """`botroll health`: take a sample, push it (or store it in directory), and with every > 0 repeat.
+
+    With every > 0 nothing that goes wrong in one iteration (a sample that fails or times out, a push or
+    a command poll that drops) stops the loop: it is logged and the next iteration follows. Only
+    KeyboardInterrupt and SystemExit end it. Once (every = 0), errors are raised as before.
+
+    An iteration that starts more than 2 x every seconds after it was due logs "stalled N s", with how far
+    the monotonic clock moved, so a stopped or suspended process shows up in the log instead of as a
+    silent gap on the board. iterations, wall, mono and sleep are for tests."""
+    wall, mono, sleep = wall or time.time, mono or time.monotonic, sleep or time.sleep
+    if url and not cfg.get("control") and every:
+        # Control is off here: refuse anything the server still has queued so it can't run later.
+        try:
+            for r in run_commands(cfg, fetch_commands(url, token)):
+                report_command(url, token, r["id"], r["status"], r["detail"], r["nonce"])
+        except Exception as e:  # noqa: BLE001  (logged; the collector must start anyway)
+            if not re.search(r": 404\b", str(e)):  # 404: the server has control off, so nothing is queued
+                _say(f"control: couldn't refuse queued commands: {_why(e)}")
+    done, last, unreported = 0, None, {}
+    while True:
+        started, started_wall = mono(), wall()
+        if every and last is not None:
+            late = started_wall - (last[1] + every)
+            if late > 2 * every:
+                _say(f"stalled {late:.0f} s: this sample started {late:.0f} s after it was due "
+                     f"(the monotonic clock moved {started - last[0]:.0f} s since the last one)")
+        last = (started, started_wall)
+        snap = None
+        try:
+            snap = sample(cfg)
+            if url:
+                push(url, token, snap)
+            else:
+                append(directory, snap)
+        except Exception as e:  # noqa: BLE001
+            if not every:
+                raise
+            _say(f"{'sample' if snap is None else 'push' if url else 'store'} failed: {_why(e)}")
+        if show and snap is not None:
+            print(json.dumps(snap, indent=2, ensure_ascii=False), flush=True)
+        done += 1
+        if not every or (iterations is not None and done >= iterations):
+            return 0
+        # Pull-model remote control: poll commands every ~10s between samples when enabled.
+        wait = max(every - (mono() - started), 1)
+        if cfg.get("control") and url:
+            deadline = mono() + wait
+            while mono() < deadline:
+                try:
+                    _poll_commands(cfg, url, token, snap, unreported)
+                except Exception as e:  # noqa: BLE001
+                    _say(f"control poll: {_why(e)}")
+                sleep(min(10, max(deadline - mono(), 0.1)))
+        else:
+            sleep(wait)
+
+
+UNREPORTED_MAX = 64  # results kept for commands that ran but whose report never got through
+
+
+def _command_key(c) -> tuple | None:
+    """What identifies one queued command: its id and nonce (a re-queued Close gets a new nonce)."""
+    if not isinstance(c, dict) or not isinstance(c.get("id"), (str, int)) or isinstance(c.get("id"), bool):
+        return None
+    return (str(c["id"]), str(c.get("nonce") or ""))
+
+
+def _poll_commands(cfg: dict, url: str, token: str | None, snap, unreported: dict) -> None:
+    """One control poll. A command that already ran here but whose result report failed (every retry) is still
+    pending on the server, so the next poll returns it again: it is not run a second time (its target may be
+    alive and its PID reused); the result it got is reported again instead. unreported maps
+    _command_key -> that result, oldest first, at most UNREPORTED_MAX."""
+    cmds = fetch_commands(url, token)
+    fresh, results = [], []
+    for c in cmds or []:
+        key = _command_key(c)
+        if key is not None and key in unreported:
+            results.append((key, unreported[key], True))
+        else:
+            fresh.append(c)
+    for c, r in zip(fresh, run_commands(cfg, fresh, snap) if fresh else []):
+        results.append((_command_key(c), r, False))
+    for key, r, again in results:
+        try:
+            report_command(url, token, r["id"], r["status"], r.get("detail") or "", r.get("nonce") or "")
+        except Exception as e:  # noqa: BLE001
+            _say(f"control report: {_why(e)}" + ("" if key is None else "; it won't be run again"))
+            if key is not None:
+                unreported.pop(key, None)
+                unreported[key] = r
+                while len(unreported) > UNREPORTED_MAX:
+                    unreported.pop(next(iter(unreported)))
+        else:
+            if key is not None:
+                unreported.pop(key, None)
+        _say(f"control {r['id']} {r['status']}: {r.get('detail')}" + (" (reported again, not re-run)" if again else ""))
