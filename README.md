@@ -215,6 +215,8 @@ Push every minute from cron:
 
 Each push uploads every roll file whole, then the watchdog's current process flags, replacing the last ones. A roll file over 256 KiB is skipped with a warning; the others still go, and `botroll push` exits 1 if anything was skipped. It refuses to send the token over plain http to anything but localhost.
 
+A dropped connection is retried, so one flaky network hop doesn't fail the whole push. A drop before the request went out (refused, or cut during the TLS handshake) is retried on every call. A drop after it was sent, with no reply, is retried only for the roll files and the watchdog flags, which just replace what's there; it is never retried for `POST /api/prune` or the Box health sample, since the server may already have acted on it. A reply, even an error, is never retried. `BOTROLL_RETRIES` sets how many retries (default 3, `0` turns them off) and `BOTROLL_RETRY_BACKOFF` the first wait in seconds (default 1, doubling each time, at most 30). Negative values count as 0; a value that isn't a number (or, for retries, a whole number) prints a warning and uses the default.
+
 A bot's file stays on the server after you delete or rename it locally. `botroll push --prune` also calls `POST /api/prune` (same push token) with the slugs it just pushed and prints the roll files the server *would* delete: it's a dry run. `botroll push --prune --yes` sends `"confirm": true` and the server deletes them, within limits kept in `.prune.json` in the data directory: at most 3 deletions an hour across all calls, never below half the bots there were at the start of the hour, never more than half the bots in one call, and never the last bot. The budget is saved before anything is deleted. If `.prune.json` is missing, unreadable or dated in the future, or the clock has gone backwards, the server fails closed: it starts a fresh hour with the budget already used up, so the first confirmed prune on a new server waits an hour. Over a limit it answers 409 and deletes nothing, so a wrong keep list can't wipe the board. It also refuses an empty list.
 
 A bot whose file you delete locally stays on the board until you delete its file from the server's volume. On Railway:
@@ -549,6 +551,7 @@ Set these on whatever renders the board (`botroll serve`, or `botroll board`):
 | `BOTROLL_TZ` | the machine's zone | the timezone times are read and written in, such as `Europe/London` |
 | `BOTROLL_PUSH_URL`, `BOTROLL_PUSH_TOKEN` | | where `botroll push` sends files, and the token it sends. `BOTROLL_URL` is accepted as an alias for the push URL |
 | `BOTROLL_HEALTH_CONFIG` | | the JSON settings file for `botroll health` (see [Box health](#box-health-optional)) |
+| `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF` | `3`, `1` | how often `botroll push` and `botroll health` retry a dropped connection, and the first wait in seconds (doubling, at most 30). `0` retries turns it off. See [Pushing](#pushing-from-the-bots-machine) |
 
 The server's settings are under [Self-host](#self-host).
 
@@ -556,7 +559,7 @@ The server's settings are under [Self-host](#self-host).
 
 | Where it's set | Settings | Documented in |
 | --- | --- | --- |
-| Bots' machine (CLI) | `BOTROLL_DIR`, `BOTROLL_HUMAN`, `BOTROLL_TZ`, `NO_COLOR`, `BOTROLL_PUSH_URL` / `BOTROLL_URL`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_NOW` (pins the clock, for demos and tests) | the table above |
+| Bots' machine (CLI) | `BOTROLL_DIR`, `BOTROLL_HUMAN`, `BOTROLL_TZ`, `NO_COLOR`, `BOTROLL_PUSH_URL` / `BOTROLL_URL`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF`, `BOTROLL_NOW` (pins the clock, for demos and tests) | the table above |
 | Server | `BOTROLL_PASSWORD_HASH` or `BOTROLL_PASSWORD`, `BOTROLL_SECRET`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_DATA`, `PORT`, `BOTROLL_TZ`, `BOTROLL_URL`, `BOTROLL_CLIENT_IP_HEADER`; flags `--behind-proxy`, `--client-ip-header`, `--insecure-http` | [Server settings](#server-settings) |
 | Email | `BOTROLL_EMAIL_PROVIDER`, `BOTROLL_EMAIL_FROM`, `BOTROLL_EMAIL_TO`, `BOTROLL_DIGEST_HOUR`, plus the provider's own key (`RESEND_API_KEY`, Cloudflare or SMTP settings) | [Email](#email) |
 | Actions | `BOTROLL_ACTIONS`, `BOTROLL_ACTION_<SLUG>_URL` / `_SECRET` / `_HEADER`, `BOTROLL_SYNC_URL` / `_SECRET` / `_HEADER`, `BOTROLL_ACTIONS_ALLOW_HTTP`, `_ALLOW_PRIVATE`, `_ALLOW_PORTS`, or `actions.json` | [Actions](#actions-optional) |
