@@ -1061,9 +1061,15 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _env_number(name: str, default: float, cast=float) -> float:
+    """A non-negative number from the environment; a bad value warns and uses the default."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
     try:
-        return max(cast(os.environ.get(name, default)), 0)
+        return max(cast(raw), 0)
     except ValueError:
+        print(f"botroll: {name}={raw!r} is not a {'whole ' if cast is int else ''}number; using {default}",
+              file=sys.stderr)
         return default
 
 
