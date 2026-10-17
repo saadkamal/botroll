@@ -193,11 +193,11 @@ class ParseTimeZones(unittest.TestCase):
     def test_z_and_offsets_are_converted(self):
         from datetime import datetime
         want = datetime(2026, 10, 14, 22, 30)  # Melbourne is UTC+11 in October (daylight time)
-        for text in ("2026-10-14T11:30:00Z", "2026-10-14 11:30z", "2026-10-14T22:30:00+11:00",
-                     "2026-10-14T22:30+1100", "2026-10-14T06:30:59-05:00", "2026-10-14T16:30+05",
-                     "2026-10-14T17:00:00.250+05:30"):
-            with self.subTest(text=text):
-                self.assertEqual(self.at(text), want)
+        for stamp in ("2026-10-14T11:30:00Z", "2026-10-14 11:30z", "2026-10-14T22:30:00+11:00",
+                      "2026-10-14T22:30+1100", "2026-10-14T06:30:59-05:00", "2026-10-14T16:30+05",
+                      "2026-10-14T17:00:00.250+05:30"):
+            with self.subTest(stamp=stamp):
+                self.assertEqual(self.at(stamp), want)
 
     def test_other_zones_and_dst(self):
         from datetime import datetime
@@ -228,8 +228,8 @@ class ParseTimeZones(unittest.TestCase):
 
     def test_ignore_restores_the_old_behaviour(self):
         from datetime import datetime
-        for text in ("2026-10-14T22:30:00Z", "2026-10-14T22:30-05:00"):
-            self.assertEqual(self.at(text, BOTROLL_TZ_OFFSETS="ignore"), datetime(2026, 10, 14, 22, 30))
+        for stamp in ("2026-10-14T22:30:00Z", "2026-10-14T22:30-05:00"):
+            self.assertEqual(self.at(stamp, BOTROLL_TZ_OFFSETS="ignore"), datetime(2026, 10, 14, 22, 30))
         self.assertEqual(self.at("2026-10-14T22:30:00Z", BOTROLL_TZ_OFFSETS="IGNORE "), datetime(2026, 10, 14, 22, 30))
 
     def test_odd_input(self):
