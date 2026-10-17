@@ -95,29 +95,59 @@ def now() -> datetime:
     return parse_time(os.environ.get("BOTROLL_NOW", "")) or local()
 
 
+_OFFSET = re.compile(r"(Z|[+-]\d{2}(?::?\d{2})?)$", re.I)
+
+
 def parse_time(text: str) -> datetime | None:
     """Parse a task timestamp. Accepts the file format and a few common variants bots write.
 
-    Always returns a naive datetime in board-local terms (no timezone conversion of Z/offsets:
-    a trailing Z or +00:00 is stripped so UTC-labelled stamps still match BOTROLL_TZ wall times
-    the bots already wrote as Melbourne-local numbers)."""
+    Returns a naive datetime in board-local terms: BOTROLL_TZ, else the machine's zone, as local() writes.
+    A time with no zone is taken to be board-local already and returned as written. A trailing Z or UTC
+    offset (+11:00, -0500, +05) is honoured: the moment is converted to BOTROLL_TZ, so 2026-10-14T11:30:00Z
+    reads as 22:30 on a board in UTC+11. BOTROLL_TZ_OFFSETS=ignore restores the old behaviour of dropping
+    the suffix and keeping the numbers (for bots that wrote local times with a stray Z). A date on its own
+    is midnight of that day, never converted; an impossible offset is dropped."""
     if not text or not isinstance(text, str):
         return None
     raw = text.strip()
     if not raw:
         return None
-    # Drop trailing Z / offset; bots sometimes paste ISO stamps beside local asked/updated fields.
-    raw = re.sub(r"(Z|[+-]\d{2}:?\d{2})$", "", raw).strip()
+    m = _OFFSET.search(raw)
+    if m and m[1].upper() != "Z" and not re.search(r"[T ]\d{1,2}:\d{2}", raw[:m.start()], re.I):
+        m = None  # "-14" at the end of 2026-10-14 is the day, not an offset
+    zone = None
+    if m:
+        raw = raw[:m.start()].strip()
+        if (os.environ.get("BOTROLL_TZ_OFFSETS") or "").strip().lower() != "ignore":
+            zone = _offset_zone(m[1])
     raw = raw.replace("T", " ", 1)
     for fmt in (TIME, "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d"):
         try:
             dt = datetime.strptime(raw, fmt)
-            if fmt == "%Y-%m-%d":
-                return dt  # midnight of that day
-            return dt.replace(second=0, microsecond=0)
         except ValueError:
             continue
+        if fmt == "%Y-%m-%d":
+            return dt  # midnight of that day
+        if zone is not None:
+            try:
+                dt = dt.replace(tzinfo=zone).astimezone(_zone(os.environ.get("BOTROLL_TZ"))).replace(tzinfo=None)
+            except (OverflowError, ValueError):  # converts past year 1 or 9999
+                return None
+        return dt.replace(second=0, microsecond=0)
     return None
+
+
+def _offset_zone(suffix: str):
+    """Z, +HH, +HHMM or +HH:MM as a fixed tzinfo; None if the offset can't exist (24 h or more, minutes >= 60)."""
+    from datetime import timedelta
+    if suffix.upper() == "Z":
+        return timezone.utc
+    digits = suffix[1:].replace(":", "")
+    hours, minutes = int(digits[:2]), int(digits[2:] or 0)
+    if hours > 23 or minutes > 59:
+        return None
+    delta = timedelta(hours=hours, minutes=minutes)
+    return timezone(-delta if suffix[0] == "-" else delta)
 
 
 def clean(text: str) -> str:

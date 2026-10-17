@@ -109,7 +109,7 @@ The same operations are a Python library: `botroll.add`, `botroll.update`, `botr
 
 ## The board
 
-The summary sentence counts **open** work and what **got done in the last 24 hours** (rolling), not the calendar day — so a midnight timezone flip does not empty the board. Times in task files and on the board use `BOTROLL_TZ` (or the server's local zone); an unknown zone name logs a warning and falls back to UTC. Done items stamped up to 10 minutes in the future (bot clock drift) still count. Set the same zone on the server and on the bots' machine.
+The summary sentence counts **open** work and what **got done in the last 24 hours** (rolling), not the calendar day — so a midnight timezone flip does not empty the board. Times in task files and on the board use `BOTROLL_TZ` (or the server's local zone); an unknown zone name logs a warning and falls back to UTC. A time written without a zone (`2026-10-14 22:30`, the file format) is read as that zone's wall time. One with a `Z` or an offset (`2026-10-14T11:30:00Z`, `+11:00`, `-0500`) is converted into it, so a bot that writes UTC still ages correctly; set `BOTROLL_TZ_OFFSETS=ignore` to drop the suffix and keep the numbers instead (the behaviour before 0.1.0). Done items stamped up to 10 minutes in the future (bot clock drift) still count. Set the same zone on the server and on the bots' machine.
 
 
 The board puts one sentence on top ("4 things need you. 5 bots are working (Max has gone quiet), 3 items are stuck, and 6 got done today."). Below it is what's waiting on you, oldest first ("Ann · T-8"), then a card per bot, titled with its name and role ("Ann · Chief of Staff"), showing what it's doing now, its asks, and anything stuck. An outlined "No owner" card holds runaway processes that no item claims. On a phone, each card's done items collapse to one line.
@@ -573,6 +573,7 @@ Set these on whatever renders the board (`botroll serve`, or `botroll board`):
 | `BOTROLL_HUMAN` | `human` | how `waiting-human` is written: `BOTROLL_HUMAN=sam` writes `waiting-sam` |
 | `NO_COLOR` | | turns off colour in the terminal board |
 | `BOTROLL_TZ` | the machine's zone | the timezone times are read and written in, such as `Europe/London` |
+| `BOTROLL_TZ_OFFSETS` | convert | `ignore`: a trailing `Z` or UTC offset on a time is dropped and the numbers kept, instead of converting the moment to `BOTROLL_TZ` |
 | `BOTROLL_PUSH_URL`, `BOTROLL_PUSH_TOKEN` | | where `botroll push` sends files, and the token it sends. `BOTROLL_URL` is accepted as an alias for the push URL |
 | `BOTROLL_HEALTH_CONFIG` | | the JSON settings file for `botroll health` (see [Box health](#box-health-optional)) |
 | `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF` | `3`, `1` | how often a dropped connection is retried, and the first wait in seconds (doubling, at most 30), for every request `botroll push` and `botroll health` make: roll files, watchdog flags and prune, the Box health sample, and the Close/Stop command poll and its result reports. `0` retries turns it off. See [Pushing](#pushing-from-the-bots-machine) and [Running it](#running-it) |
@@ -583,8 +584,8 @@ The server's settings are under [Self-host](#self-host).
 
 | Where it's set | Settings | Documented in |
 | --- | --- | --- |
-| Bots' machine (CLI) | `BOTROLL_DIR`, `BOTROLL_HUMAN`, `BOTROLL_TZ`, `NO_COLOR`, `BOTROLL_PUSH_URL` / `BOTROLL_URL`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF`, `BOTROLL_NOW` (pins the clock, for demos and tests) | the table above |
-| Server | `BOTROLL_PASSWORD_HASH` or `BOTROLL_PASSWORD`, `BOTROLL_SECRET`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_DATA`, `PORT`, `BOTROLL_TZ`, `BOTROLL_URL`, `BOTROLL_CLIENT_IP_HEADER`; flags `--behind-proxy`, `--client-ip-header`, `--insecure-http` | [Server settings](#server-settings) |
+| Bots' machine (CLI) | `BOTROLL_DIR`, `BOTROLL_HUMAN`, `BOTROLL_TZ`, `BOTROLL_TZ_OFFSETS`, `NO_COLOR`, `BOTROLL_PUSH_URL` / `BOTROLL_URL`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_RETRIES`, `BOTROLL_RETRY_BACKOFF`, `BOTROLL_NOW` (pins the clock, for demos and tests) | the table above |
+| Server | `BOTROLL_PASSWORD_HASH` or `BOTROLL_PASSWORD`, `BOTROLL_SECRET`, `BOTROLL_PUSH_TOKEN`, `BOTROLL_DATA`, `PORT`, `BOTROLL_TZ`, `BOTROLL_TZ_OFFSETS`, `BOTROLL_URL`, `BOTROLL_CLIENT_IP_HEADER`; flags `--behind-proxy`, `--client-ip-header`, `--insecure-http` | [Server settings](#server-settings) |
 | Email | `BOTROLL_EMAIL_PROVIDER`, `BOTROLL_EMAIL_FROM`, `BOTROLL_EMAIL_TO`, `BOTROLL_DIGEST_HOUR`, plus the provider's own key (`RESEND_API_KEY`, Cloudflare or SMTP settings) | [Email](#email) |
 | Actions | `BOTROLL_ACTIONS`, `BOTROLL_ACTION_<SLUG>_URL` / `_SECRET` / `_HEADER`, `BOTROLL_SYNC_URL` / `_SECRET` / `_HEADER`, `BOTROLL_ACTIONS_ALLOW_HTTP`, `_ALLOW_PRIVATE`, `_ALLOW_PORTS`, or `actions.json` | [Actions](#actions-optional) |
 | Box health | `BOTROLL_HEALTH`, `BOTROLL_HEALTH_CONTROL`, `BOTROLL_HEALTH_CONFIG`, `BOTROLL_HEALTH_MEM_AMBER` / `_RED`, `BOTROLL_HEALTH_LOAD_AMBER` / `_RED`, `BOTROLL_HEALTH_BUCKET_MIN`, and the collector's JSON file ([`botroll-health.json.example`](botroll-health.json.example)) | [Box health](#box-health-optional) |
