@@ -533,8 +533,8 @@ def safe_title(title: str, url: str) -> str:
     (b) it starts with the host (so also host:port/...), an IPv6 host with or without its brackets;
     (c) it contains any path, query or fragment segment of the URL of 4+ characters, case-insensitively;
     (d) the URL isn't http or https.
-    (c) also drops honest titles that repeat the path, e.g. "GitHub - saadkamal/botroll" on
-    github.com/saadkamal/botroll shows as "github.com". That's deliberate: safety over detail."""
+    (c) also drops honest titles that repeat the path, e.g. "GitHub - octo/project" on
+    github.com/octo/project shows as "github.com". That's deliberate: safety over detail."""
     t, u = _decode(title).strip(), _decode(url).strip()
     try:
         parts = urlsplit(u)
@@ -905,11 +905,6 @@ def bucket_peaks(samples: list[dict], at: float, bucket_min: int = 30, hours: in
                           "avail_pct": 100 * s["mem"]["available_mb"] / max(s["mem"]["total_mb"], 1),
                           "bot": (b.get("bot") or os.path.basename(str(b.get("profile", "")))) if b else None}
     return out
-
-
-def hourly_peaks(samples: list[dict], at: float, hours: int = 24) -> list[dict | None]:
-    """Back-compat: 60-minute buckets."""
-    return bucket_peaks(samples, at, bucket_min=60, hours=hours)
 
 
 

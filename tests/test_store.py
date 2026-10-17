@@ -49,7 +49,7 @@ class Store(unittest.TestCase):
 
     def test_a_write_rewrites_only_the_line_it_changes(self):
         path = os.path.join(self.dir, "social.md")
-        lines = ["# Social", "* [Waiting-Saad]  T-1 Hand written ·  note: as typed", "  - [todo] T-2 Nested · pid: 7",
+        lines = ["# Social", "* [Waiting-Sam]  T-1 Hand written ·  note: as typed", "  - [todo] T-2 Nested · pid: 7",
                  "- [todo] T-3 Change me · asked 2026-10-10 09:00"]
         pathlib.Path(path).write_text("\n".join(lines) + "\n")
         update(self.dir, "social", "T-3", "doing")
