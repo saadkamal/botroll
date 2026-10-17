@@ -18,6 +18,32 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 __version__ = "0.1.0"
+_COMMIT = re.compile(r"[0-9a-f]{7,40}")
+
+
+def commit() -> str:
+    """The git commit this copy was built from: $BOTROLL_COMMIT, else the one baked in at build time
+    (botroll/_build.py, written by `git archive` or the Dockerfile's GIT_SHA argument), else "unknown".
+    Only a 7-40 character lowercase hex id counts, so nothing else can reach a header or the /health body."""
+    for value in (os.environ.get("BOTROLL_COMMIT", ""), _baked_commit()):
+        value = value.strip().lower()
+        if _COMMIT.fullmatch(value):
+            return value
+    return "unknown"
+
+
+def _baked_commit() -> str:
+    try:
+        from ._build import COMMIT
+    except ImportError:
+        return ""
+    return COMMIT if isinstance(COMMIT, str) else ""
+
+
+def version_string() -> str:
+    """The version with the commit as a local label, e.g. 0.1.0+3f2c1ab9d0e4 (just 0.1.0 when the commit is unknown)."""
+    c = commit()
+    return __version__ if c == "unknown" else f"{__version__}+{c[:12]}"
 
 STATES = ("todo", "doing", "waiting-human", "blocked", "done", "dropped")
 OPEN = ("todo", "doing", "waiting-human", "blocked")
