@@ -4,6 +4,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+- **Behaviour change:** a time with a trailing `Z` or UTC offset (`2026-10-14T11:30:00Z`, `+11:00`, `-0500`, `+05`) is now converted to `BOTROLL_TZ` (or the machine's zone) instead of having the suffix dropped. A bot that writes UTC stamps no longer looks hours old or hours in the future. Times without a zone, including everything in the file format, read exactly as before, and so does a date on its own. `BOTROLL_TZ_OFFSETS=ignore` restores the old behaviour, for bots that wrote local times with a stray `Z`.
 - `botroll push` and `botroll health` retry a dropped connection: always when it dropped before the request was sent, and after sending only for roll files and watchdog flags (never `/api/prune` or health samples). `BOTROLL_RETRIES` (default 3) and `BOTROLL_RETRY_BACKOFF` (default 1 second, doubling, capped at 30) tune it. A drop after sending now fails with a plain error instead of a traceback, so `botroll health --every` keeps running.
 - Public-repo housekeeping: SECURITY.md, CODE_OF_CONDUCT.md, issue and pull request templates, README badges, features, a settings index and a security section.
 - Examples, tests, screenshots and the site use neutral demo names (Ann, Max, Kai, Zoe) and generic paths.

@@ -6,6 +6,7 @@ import re
 import tempfile
 import unittest
 from datetime import datetime
+from unittest import mock
 
 from botroll.board import cards, needs_you, page, snapshot, text
 from botroll.watch import Proc
@@ -179,6 +180,73 @@ class Contrast(unittest.TestCase):
                     self.assertGreaterEqual(contrast(a, b), 4.5)
 
 
+
+class ParseTimeZones(unittest.TestCase):
+    """Z and UTC offsets are converted to BOTROLL_TZ; times without a zone are read as written."""
+
+    def at(self, text, tz="Australia/Melbourne", **env):
+        from botroll import parse_time
+        clean = {k: v for k, v in os.environ.items() if k not in ("BOTROLL_TZ", "BOTROLL_TZ_OFFSETS")}
+        with mock.patch.dict(os.environ, {**clean, **({"BOTROLL_TZ": tz} if tz else {}), **env}, clear=True):
+            return parse_time(text)
+
+    def test_z_and_offsets_are_converted(self):
+        from datetime import datetime
+        want = datetime(2026, 10, 14, 22, 30)  # Melbourne is UTC+11 in October (daylight time)
+        for text in ("2026-10-14T11:30:00Z", "2026-10-14 11:30z", "2026-10-14T22:30:00+11:00",
+                     "2026-10-14T22:30+1100", "2026-10-14T06:30:59-05:00", "2026-10-14T16:30+05",
+                     "2026-10-14T17:00:00.250+05:30"):
+            with self.subTest(text=text):
+                self.assertEqual(self.at(text), want)
+
+    def test_other_zones_and_dst(self):
+        from datetime import datetime
+        self.assertEqual(self.at("2026-10-14T11:30Z", "America/New_York"), datetime(2026, 10, 14, 7, 30))
+        self.assertEqual(self.at("2026-07-14T11:30Z"), datetime(2026, 7, 14, 21, 30))  # Melbourne winter, +10
+        self.assertEqual(self.at("2026-10-14T23:30Z"), datetime(2026, 10, 15, 10, 30))  # crosses midnight
+
+    def test_naive_times_are_unchanged(self):
+        from datetime import datetime
+        for tz in ("Australia/Melbourne", "America/New_York", None):
+            with self.subTest(tz=tz):
+                self.assertEqual(self.at("2026-10-14 22:30", tz), datetime(2026, 10, 14, 22, 30))
+                self.assertEqual(self.at("2026-10-14T22:30:45", tz), datetime(2026, 10, 14, 22, 30))
+                self.assertEqual(self.at("2026-10-14", tz), datetime(2026, 10, 14))
+                self.assertEqual(self.at("2026-10-14Z", tz), datetime(2026, 10, 14))  # a date is not a moment
+
+    def test_without_botroll_tz_the_machine_zone(self):
+        import time
+        from datetime import datetime
+        if not hasattr(time, "tzset"):
+            self.skipTest("needs time.tzset")
+        old = os.environ.get("TZ")
+        self.addCleanup(lambda: (os.environ.__setitem__("TZ", old) if old is not None else os.environ.pop("TZ", None),
+                                 time.tzset()))
+        os.environ["TZ"] = "Asia/Tokyo"
+        time.tzset()
+        self.assertEqual(self.at("2026-10-14T11:30Z", None), datetime(2026, 10, 14, 20, 30))
+
+    def test_ignore_restores_the_old_behaviour(self):
+        from datetime import datetime
+        for text in ("2026-10-14T22:30:00Z", "2026-10-14T22:30-05:00"):
+            self.assertEqual(self.at(text, BOTROLL_TZ_OFFSETS="ignore"), datetime(2026, 10, 14, 22, 30))
+        self.assertEqual(self.at("2026-10-14T22:30:00Z", BOTROLL_TZ_OFFSETS="IGNORE "), datetime(2026, 10, 14, 22, 30))
+
+    def test_odd_input(self):
+        from datetime import datetime
+        self.assertEqual(self.at("2026-10-14 22:30+99:00"), datetime(2026, 10, 14, 22, 30))  # impossible: dropped
+        self.assertEqual(self.at("2026-10-14 22:30+05:75"), datetime(2026, 10, 14, 22, 30))
+        self.assertIsNone(self.at("0001-01-01 00:10+05:00"))  # would land before year 1
+        self.assertIsNone(self.at("Z"))
+        self.assertIsNone(self.at("+05:00"))
+
+    def test_item_age_uses_the_converted_time(self):
+        from botroll import Item, now
+        with mock.patch.dict(os.environ, {"BOTROLL_TZ": "Australia/Melbourne", "BOTROLL_NOW": "2026-10-14 23:30"}):
+            item = Item("doing", "T-1", "x", {"updated": "2026-10-14T11:30:00Z"})
+            self.assertEqual(item.age(now()), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -217,7 +285,8 @@ class ParseTime(unittest.TestCase):
         from botroll import parse_time
         self.assertEqual(parse_time("2026-10-14 22:30"), datetime(2026, 10, 14, 22, 30))
         self.assertEqual(parse_time("2026-10-14 22:30:45"), datetime(2026, 10, 14, 22, 30))
-        self.assertEqual(parse_time("2026-10-14T22:30:45Z"), datetime(2026, 10, 14, 22, 30))
+        with mock.patch.dict(os.environ, {"BOTROLL_TZ": "UTC"}):
+            self.assertEqual(parse_time("2026-10-14T22:30:45Z"), datetime(2026, 10, 14, 22, 30))
         self.assertEqual(parse_time("2026-10-14"), datetime(2026, 10, 14, 0, 0))
         self.assertIsNone(parse_time(""))
         self.assertIsNone(parse_time("not a date"))
