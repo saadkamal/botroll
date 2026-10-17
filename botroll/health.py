@@ -277,8 +277,9 @@ _salt: bytes | None = None
 
 def _install_salt() -> bytes:
     """A random per-install key (0600), so a profile id can't be computed from a guessed path.
-    The file is opened without following symlinks; a missing, short or unreadable file is (re)created, and an
-    existing one is tightened to 0600 (or replaced if that fails). Only if writing fails is a per-process key
+    The file is opened without following symlinks or blocking (a FIFO can't hang it); a missing, short, unreadable
+    or non-regular file is (re)created, an existing one is tightened to 0600 (or replaced if that fails), and its
+    folder is kept at 0700. Only if writing fails is a per-process key
     used, with a warning (ids then change on restart)."""
     global _salt
     if _salt is None:
@@ -286,11 +287,29 @@ def _install_salt() -> bytes:
     return _salt
 
 
+SALT_MIN = 16  # bytes; a shorter (or empty) file is never used as the HMAC key
+
+
+def _private_dir(path: str) -> None:
+    """Make the salt's folder (normally ~/.botroll) 0700: create it so, and tighten an existing one we own.
+    A symlink or someone else's folder is left alone; failure is not fatal (the salt file itself is 0600)."""
+    import stat
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        st = os.lstat(path)
+        if stat.S_ISDIR(st.st_mode) and st.st_uid == os.geteuid() and st.st_mode & 0o077:
+            os.chmod(path, 0o700)
+    except OSError:
+        pass
+
+
 def _load_or_make_salt(path: str) -> bytes:
     import stat
     nofollow = getattr(os, "O_NOFOLLOW", 0)
+    _private_dir(os.path.dirname(path))
     try:
-        fd = os.open(path, os.O_RDONLY | nofollow)
+        # O_NONBLOCK: opening a FIFO for reading would otherwise wait forever for a writer.
+        fd = os.open(path, os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0))
         try:
             st = os.fstat(fd)
             ok = stat.S_ISREG(st.st_mode)
@@ -302,14 +321,13 @@ def _load_or_make_salt(path: str) -> bytes:
             data = os.read(fd, 64) if ok else b""
         finally:
             os.close(fd)
-        if len(data) >= 16:
+        if len(data) >= SALT_MIN:
             return data
     except OSError:
         pass
     salt = os.urandom(32)
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
         try:
             with os.fdopen(fd, "wb") as f:

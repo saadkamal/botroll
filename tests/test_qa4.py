@@ -1,5 +1,6 @@
 """QA round 4: labels a folder name can't fake (M2), and the per-install salt (S1, S2, T5)."""
 import tmphome  # noqa: F401
+import contextlib
 import os
 import pathlib
 import shutil
@@ -153,6 +154,84 @@ class Salt(unittest.TestCase):
         self.assertEqual(len(s), 32)
         self.assertTrue(any("temporary key" in m for m in cm.output))
         self.assertFalse(self.path.exists())
+
+    def test_l2_salt_length_boundary(self):
+        self.path.parent.mkdir()
+        for n in (0, 1, health.SALT_MIN - 1):
+            self.path.write_bytes(b"k" * n)
+            s = self.salt()
+            self.assertEqual(len(s), 32, n)  # too short: never used as the key, replaced
+            self.assertEqual(self.path.read_bytes(), s)
+        self.path.write_bytes(b"k" * health.SALT_MIN)
+        self.assertEqual(self.salt(), b"k" * health.SALT_MIN)  # long enough: kept as it is
+
+    def test_l2_empty_key_never_used(self):
+        import hashlib
+        import hmac
+        self.path.parent.mkdir()
+        self.path.write_bytes(b"")
+        health._salt = None
+        got = health.profile_id("/some/profile")
+        empty = hmac.new(b"", health.norm_path("/some/profile").encode(), hashlib.sha256).hexdigest()[:8]
+        self.assertNotEqual(got, empty)
+
+    def test_l2_directory_at_salt_path_is_not_a_key(self):
+        self.path.mkdir(parents=True)
+        with self.assertLogs("botroll.health", "WARNING"):
+            s = self.salt()  # can't replace a folder: a per-process key, with the warning
+        self.assertEqual(len(s), 32)
+        self.assertTrue(self.path.is_dir())
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs FIFOs")
+    def test_l2_fifo_with_data_is_not_a_key(self):
+        self.path.parent.mkdir()
+        os.mkfifo(self.path)
+        w = os.open(self.path, os.O_RDWR | os.O_NONBLOCK)  # a writer that has already queued a known key
+        self.addCleanup(os.close, w)
+        os.write(w, b"attacker-known-key-0123456789ab")
+        s = self.salt()
+        self.assertNotEqual(s, b"attacker-known-key-0123456789ab")
+        self.assertTrue(stat.S_ISREG(os.lstat(self.path).st_mode))  # the FIFO was replaced by a real salt file
+        self.assertEqual(self.path.read_bytes(), s)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "needs FIFOs")
+    def test_l1_fifo_without_writer_does_not_hang(self):
+        import threading
+        self.path.parent.mkdir()
+        os.mkfifo(self.path)
+        out = []
+        t = threading.Thread(target=lambda: out.append(self.salt()), daemon=True)
+        t.start()
+        t.join(10)
+        if t.is_alive():  # blocked in open(): give it a writer so the thread can finish, then fail
+            with contextlib.suppress(OSError):
+                os.close(os.open(self.path, os.O_WRONLY | os.O_NONBLOCK))
+            t.join(5)
+            self.fail("opening a FIFO at the salt path blocked")
+        self.assertEqual(len(out[0]), 32)
+        self.assertTrue(stat.S_ISREG(os.lstat(self.path).st_mode))
+
+    def test_l2_new_salt_folder_is_0700(self):
+        self.salt()
+        self.assertEqual(stat.S_IMODE(self.path.parent.stat().st_mode), 0o700)
+
+    def test_l2_existing_salt_folder_tightened_to_0700(self):
+        for salt_exists in (False, True):
+            self.path.parent.mkdir(exist_ok=True)
+            if salt_exists:
+                self.path.write_bytes(b"k" * 32)
+                os.chmod(self.path, 0o600)
+            os.chmod(self.path.parent, 0o755)
+            self.salt()
+            self.assertEqual(stat.S_IMODE(self.path.parent.stat().st_mode), 0o700, salt_exists)
+
+    def test_l2_symlinked_salt_folder_left_alone(self):
+        target = self.home / "shared"
+        target.mkdir(mode=0o755)
+        os.chmod(target, 0o755)
+        self.path.parent.symlink_to(target)
+        self.salt()
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
 
     def test_no_warning_when_written(self):
         with mock.patch.object(health.log, "warning") as w:
