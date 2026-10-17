@@ -9,6 +9,7 @@ You need Python 3.10 or newer on Linux or macOS. There is nothing to install for
 ```sh
 git clone https://github.com/saadkamal/botroll && cd botroll
 python3 -m unittest discover -s tests        # the tests
+python3 -m unittest tests.test_serve         # one module (or tests.test_serve.Class.test_name)
 python3 -m botroll --dir examples/tasks board   # run from the checkout
 ```
 
