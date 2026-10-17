@@ -82,6 +82,11 @@ class Cli(unittest.TestCase):
         self.assertIn("state must be one of", run("add", "qa", "x", "--state", "nope")[2])
 
     def test_push_url_alias(self):
+        # Start from an environment with no BOTROLL_* settings, so a real BOTROLL_PUSH_URL can't leak in.
+        clean = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.startswith("BOTROLL_")},
+                                clear=True)
+        clean.start()
+        self.addCleanup(clean.stop)
         with mock.patch.dict(os.environ, {"BOTROLL_PUSH_URL": "https://push.example",
                                          "BOTROLL_URL": "https://board.example",
                                          "BOTROLL_PUSH_TOKEN": "t" * 40}):
