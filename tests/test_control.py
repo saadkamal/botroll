@@ -129,7 +129,7 @@ class Guards(unittest.TestCase):
         self.cfg["helper_match"] = ""
         self.assertEqual(self.stop("stop-helper", 200, NOW - 50), "not an allowed helper")
 
-    # Jobs (M1): only argv[0]'s program, never a keyword anywhere in the command line
+    # Jobs: only argv[0]'s program, never a keyword anywhere in the command line
 
     def test_job_keyword_elsewhere_refused(self):
         for pid in (301, 302, 303, 307):
@@ -159,7 +159,7 @@ class Guards(unittest.TestCase):
         self.assertEqual(self.stop("stop-job", 200, NOW - 50), "not on the latest local sample")
         self.assertEqual(self.stop("stop-helper", 300, NOW - 60), "not on the latest local sample")
 
-    # Collector's own sample (L2) and control switch
+    # Collector's own sample and control switch
 
     def test_target_must_be_on_local_sample(self):
         self.assertEqual(self.close(sample={"browsers": [], "helpers": [], "jobs": []}),

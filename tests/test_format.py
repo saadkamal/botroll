@@ -29,7 +29,7 @@ class Format(unittest.TestCase):
         self.assertIn("free text here", item.line())
 
     def test_waiting_states_normalise(self):
-        for word in ("waiting", "waiting-human", "waiting-saad", "Waiting-Alex"):
+        for word in ("waiting", "waiting-human", "waiting-sam", "Waiting-Alex"):
             self.assertEqual(parse(f"- [{word}] T-1 Ask")[0].state, "waiting-human")
 
     def test_human_name_is_written(self):
@@ -37,8 +37,8 @@ class Format(unittest.TestCase):
         with mock.patch.dict(os.environ):
             os.environ.pop("BOTROLL_HUMAN", None)
             self.assertTrue(item.line().startswith("- [waiting-human] T-1"))
-        with mock.patch.dict(os.environ, {"BOTROLL_HUMAN": "Saad"}):
-            self.assertTrue(item.line().startswith("- [waiting-saad] T-1"))
+        with mock.patch.dict(os.environ, {"BOTROLL_HUMAN": "Sam"}):
+            self.assertTrue(item.line().startswith("- [waiting-sam] T-1"))
 
     def test_fields_keep_their_order(self):
         [item] = parse("- [todo] T-1 x · note: n · updated 2026-01-01 10:00 · pid: 1")

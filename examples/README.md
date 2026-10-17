@@ -14,7 +14,7 @@ botroll --dir examples/tasks watch
 
 ## Process flags
 
-The PIDs in these files are made up, so on your machine the process flags (`pid`, `cpu`, `capture`) won't appear unless those PIDs happen to exist. The screenshots in `docs/` used real processes on the machine that took them:
+The PIDs in these files are made up, so on your machine the process flags (`pid`, `cpu`, `capture`) won't appear unless those PIDs happen to exist. The screenshots in `docs/` and `site/` used real processes on the machine that took them:
 
 - a busy Python loop recorded on Kai's (QA) open item, which became a `cpu` flag after an hour,
 - an ffmpeg recorded on Vera's (Video) done item `T-2`, which became a `pid` flag,

@@ -10,6 +10,7 @@ You need Python 3.10 or newer on Linux or macOS. There is nothing to install for
 git clone https://github.com/saadkamal/botroll && cd botroll
 python3 -m unittest discover -s tests        # the tests
 python3 -m unittest tests.test_serve         # one module (or tests.test_serve.Class.test_name)
+ruff check .                                 # lint (pip install ruff)
 python3 -m botroll --dir examples/tasks board   # run from the checkout
 ```
 
@@ -40,7 +41,7 @@ When you change the board, render the examples and look at them at desktop and p
 BOTROLL_NOW="2026-10-10 15:30" python3 -m botroll --dir examples/tasks board --html /tmp/board.html
 ```
 
-The screenshots in `docs/` were taken from that output with real processes running, so the watchdog's process flags appear. [examples/README.md](examples/README.md) explains how.
+The screenshots in `docs/` and `site/` were taken from that output with real processes running, so the watchdog's process flags appear. [examples/README.md](examples/README.md) explains how.
 
 ## Rules of thumb
 
@@ -53,7 +54,7 @@ The screenshots in `docs/` were taken from that output with real processes runni
 
 ## Pull requests
 
-CI runs the tests on Linux and macOS for Python 3.10 and 3.14, then renders the example board. Please make sure `python3 -m unittest discover -s tests` passes before you open one.
+CI runs `ruff check` (the rules are in `pyproject.toml`), then the tests on Linux and macOS for Python 3.10 and 3.14, then renders the example board. Please make sure `python3 -m unittest discover -s tests` passes before you open one.
 
 ## Conduct and security
 

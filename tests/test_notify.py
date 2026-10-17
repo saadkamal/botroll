@@ -7,7 +7,6 @@ import pathlib
 import shutil
 import smtplib
 import tempfile
-import threading
 import time
 import unittest
 import urllib.error

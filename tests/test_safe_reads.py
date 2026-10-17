@@ -1,4 +1,4 @@
-"""Kai's round-2 lows: safe file reads, invisible characters, full-path closability, node launcher, escaping."""
+"""Collector hardening: safe file reads, invisible characters, full-path closability, node launcher, escaping."""
 import tmphome  # noqa: F401  (temp HOME before botroll is imported)
 import os
 import pathlib

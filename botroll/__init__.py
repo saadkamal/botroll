@@ -60,7 +60,7 @@ def tasks_dir() -> str:
 
 
 def waiting_label() -> str:
-    """How waiting-human is written in files, e.g. waiting-saad when BOTROLL_HUMAN=saad."""
+    """How waiting-human is written in files, e.g. waiting-sam when BOTROLL_HUMAN=sam."""
     return "waiting-" + os.environ.get("BOTROLL_HUMAN", "human").strip().lower()
 
 
@@ -306,7 +306,7 @@ def editing(directory: str, bot: str):
     with locked(directory):
         lines = read(directory, bot)
         yield lines
-        write_atomic(target, "\n".join(l if isinstance(l, str) else l.raw or l.line() for l in lines).rstrip("\n") + "\n")
+        write_atomic(target, "\n".join(ln if isinstance(ln, str) else ln.raw or ln.line() for ln in lines).rstrip("\n") + "\n")
 
 
 def store(directory: str, bot: str, text: str) -> int:

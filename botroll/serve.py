@@ -616,11 +616,6 @@ class Handler(BaseHTTPRequestHandler):
 
     # Cookies, sessions and CSRF
 
-    def signing_key(self) -> bytes:
-        """HMAC key: the secret mixed with the password id and a version bumped on logout."""
-        material = f"{self.cfg.auth_id}:{self.cfg.session_version}".encode()
-        return hmac.new(self.cfg.secret, material, hashlib.sha256).digest()
-
     def sign(self, text: str) -> str:
         return _sign(self.cfg, text)
 
@@ -838,7 +833,8 @@ class Handler(BaseHTTPRequestHandler):
             for g in latest.get("browsers") or []:
                 if (g.get("profile") == target["profile"] and g.get("main_pid") == pid
                         and g.get("started_at") == started_at and g.get("closable") is True):
-                    ok = True; break
+                    ok = True
+                    break
         elif kind == "stop-helper":
             ok = any(h.get("pid") == pid and h.get("started_at") == started_at
                      for h in (latest.get("helpers") or []))

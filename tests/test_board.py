@@ -98,7 +98,10 @@ class Board(unittest.TestCase):
 
     def test_avatar_colours_follow_the_name(self):
         html = page(self.snap)
-        hue = lambda name: re.search(rf'class="mark (hue\d)" aria-hidden="true">{name[0]}</span><span class="name">{name}', html)[1]
+
+        def hue(name):
+            return re.search(rf'class="mark (hue\d)" aria-hidden="true">{name[0]}</span><span class="name">{name}', html)[1]
+
         self.assertEqual(hue("Ann"), hue("Kai"))  # same hash bucket, so the same colour every time
         self.assertNotEqual(hue("Ann"), hue("Max"))
 
@@ -260,7 +263,8 @@ class RecentWindow(unittest.TestCase):
         from datetime import datetime
 
         from botroll.board import snapshot
-        d = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, d)
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
         pathlib.Path(d, "bot.md").write_text(
             "---\nname: Bot\nrole: X\n---\n"
             "- [done] T-1 Shipped yesterday evening · asked 2026-10-14 18:00 · updated 2026-10-14 22:30\n"
