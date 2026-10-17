@@ -702,7 +702,9 @@ class ControlLive(test_serve.Server):
         }, cookies=cookies).status, 404)
         self.assertEqual(self.request("GET", "/api/health/commands",
                                       headers={"Authorization": f"Bearer {test_serve.TOKEN}"}).status, 404)
-        self.assertEqual(health.pending_commands(self.data), [])  # cleared while control is off
+        self.assertEqual(len(health.pending_commands(self.data)), 1)  # a GET changes nothing
+        self.assertEqual(serve.clear_stale(self.cfg), 1)  # what startup does with control off
+        self.assertEqual(health.pending_commands(self.data), [])
         self.assertEqual(health.recent_results(self.data)[-1]["status"], "cancelled")
 
     def test_close_needs_a_configured_browser(self):
