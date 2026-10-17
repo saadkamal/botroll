@@ -841,18 +841,14 @@ def append(directory: str, snap: dict, at: float | None = None) -> int:
 
 
 def push(url: str, token: str, snap: dict) -> None:
-    from .serve import _NoRedirect
+    from .serve import _NoRedirect, send
     parts = urlsplit(url)
     if parts.scheme != "https" and parts.hostname not in ("localhost", "127.0.0.1", "::1"):
         raise ValueError("refusing to send the push token without https")
     req = urllib.request.Request(url.rstrip("/") + "/api/health", data=json.dumps(snap).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    try:
-        urllib.request.build_opener(_NoRedirect).open(req, timeout=30).close()
-    except urllib.error.HTTPError as e:
-        raise ValueError(f"/api/health: {e.code} {e.read().decode(errors='replace').strip()}") from None
-    except urllib.error.URLError as e:
-        raise ValueError(f"can't reach {url}: {e.reason}") from None
+    # Not idempotent: the server keeps every sample. A lost reply is reported, and the next sample follows.
+    send(urllib.request.build_opener(_NoRedirect), req, idempotent=False)
 
 
 # Board view helpers --------------------------------------------------------------

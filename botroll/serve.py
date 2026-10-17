@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import html
+import http.client
 import json
 import math
 import os
@@ -1059,6 +1060,45 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _env_number(name: str, default: float, cast=float) -> float:
+    try:
+        return max(cast(os.environ.get(name, default)), 0)
+    except ValueError:
+        return default
+
+
+def send(opener, req: urllib.request.Request, *, idempotent: bool, timeout: float = 30,
+         retries: int | None = None, backoff: float | None = None) -> bytes:
+    """Send req and return the body, retrying a dropped connection.
+
+    A drop before the request went out (urllib's URLError: refused, reset or cut during the TLS
+    handshake) is always retried. A drop after it was sent (no reply) is retried only when idempotent,
+    since the server may have acted on it. A reply, even an error, is never retried.
+    retries (default $BOTROLL_RETRIES, 3) and backoff (default $BOTROLL_RETRY_BACKOFF, 1 second,
+    doubling and capped at 30) tune it; retries=0 turns it off."""
+    retries = int(_env_number("BOTROLL_RETRIES", 3, int)) if retries is None else retries
+    backoff = _env_number("BOTROLL_RETRY_BACKOFF", 1.0) if backoff is None else backoff
+    parts = urlsplit(req.full_url)
+    route = parts.path
+    for attempt in range(retries + 1):
+        try:
+            with opener.open(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            raise ValueError(f"{route}: {e.code} {e.read().decode(errors='replace').strip()}") from None
+        except urllib.error.URLError as e:
+            err = f"can't reach {parts.scheme}://{parts.netloc}: {e.reason}"
+        except (OSError, http.client.HTTPException) as e:
+            err = f"{route}: connection dropped after sending ({type(e).__name__}: {e})"
+            if not idempotent:
+                raise ValueError(err + "; not retried, the server may have acted on it") from None
+        if attempt == retries:
+            raise ValueError(err) from None
+        print(f"botroll: {err}; retry {attempt + 1}/{retries}", file=sys.stderr)
+        time.sleep(min(backoff * 2 ** attempt, 30))
+    raise AssertionError("unreachable")
+
+
 def push(url: str, token: str, directory: str, prune: bool = False, removed: list | None = None,
          confirm: bool = False) -> tuple[int, int, int]:
     """Upload every roll file and the watchdog's process flags. Returns (rolls, findings, skipped).
@@ -1072,16 +1112,10 @@ def push(url: str, token: str, directory: str, prune: bool = False, removed: lis
     base = url.rstrip("/")
     opener = urllib.request.build_opener(_NoRedirect)
 
-    def post(route: str, body: bytes, ctype: str) -> bytes:
+    def post(route: str, body: bytes, ctype: str, idempotent: bool = True) -> bytes:
         req = urllib.request.Request(base + route, data=body, method="POST",
                                      headers={"Authorization": f"Bearer {token}", "Content-Type": ctype})
-        try:
-            with opener.open(req, timeout=30) as r:
-                return r.read()
-        except urllib.error.HTTPError as e:
-            raise ValueError(f"{route}: {e.code} {e.read().decode(errors='replace').strip()}") from None
-        except urllib.error.URLError as e:
-            raise ValueError(f"can't reach {base}: {e.reason}") from None
+        return send(opener, req, idempotent=idempotent)
 
     names = bots(directory)
     pushed, skipped = 0, 0
@@ -1100,8 +1134,9 @@ def push(url: str, token: str, directory: str, prune: bool = False, removed: lis
     if prune:
         if not names:
             raise ValueError("refusing to prune: no roll files in " + directory)
+        # Not idempotent: a repeat after a lost reply could delete again within the hourly cap.
         out = json.loads(post("/api/prune", json.dumps({"keep": names, "confirm": confirm}).encode(),
-                              "application/json"))
+                              "application/json", idempotent=False))
         if removed is not None:
             removed.extend(out.get("removed") or out.get("would_remove") or [])
     return pushed, len(findings), skipped
