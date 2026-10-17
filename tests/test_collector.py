@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -101,6 +102,22 @@ class Survives(unittest.TestCase):
     def test_interrupts_still_end_it(self):
         with mock.patch.object(health, "sample", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
             collect(self.clock)
+
+    def test_interrupts_in_the_control_poll_still_end_it(self):
+        report = mock.patch.object(health, "report_command").start()
+        cmd = [{"id": "c1", "nonce": "n1"}]
+        for fetch, rep in ((KeyboardInterrupt, None), (SystemExit(3), None), ([cmd], KeyboardInterrupt)):
+            with self.subTest(fetch=fetch, report=rep):
+                self.fetch.side_effect, report.side_effect = fetch, rep
+                with mock.patch.object(health, "sample", return_value=SNAP), \
+                        mock.patch.object(health, "run_commands", return_value=[{"id": "c1", "nonce": "n1",
+                                                                               "status": "ok", "detail": "x"}]), \
+                        contextlib.redirect_stderr(io.StringIO()), \
+                        self.assertRaises(BaseException) as cm:
+                    health.collect({"control": True}, "/nonexistent", "https://board.example", TOKEN, 60,
+                                   iterations=3, wall=lambda: self.clock.wall, mono=lambda: self.clock.mono,
+                                   sleep=self.clock.sleep)
+                self.assertIsInstance(cm.exception, (KeyboardInterrupt, SystemExit))
 
     def test_once_still_raises(self):
         with mock.patch.object(health, "sample", side_effect=subprocess.TimeoutExpired(["ps"], 20)), \
@@ -225,6 +242,18 @@ class Redirect(Record):
     do_POST = do_GET
 
 
+class SameHost(Record):
+    """Redirects the command routes to another path on the same server, which would answer with a command."""
+
+    def do_GET(self):
+        self.note()
+        if self.path.startswith("/api/"):
+            self.answer(self.server.code, b"moved", [("Location", "/moved" + self.path)])
+        else:
+            self.answer(200, b'{"commands": [{"id": "stolen"}]}')
+    do_POST = do_GET
+
+
 class Flaky(Record):
     """Reads each request, then closes without a reply the first `drops` times."""
 
@@ -267,6 +296,17 @@ class Commands(unittest.TestCase):
             self.assertTrue(all(auth == f"Bearer {TOKEN}" for _, _, auth, _ in board.seen))
         self.assertEqual(other.seen, [])  # nothing reached the redirect target, so no Authorization either
 
+    def test_same_host_redirects_are_not_followed_either(self):
+        for code in (301, 302, 303, 307, 308):
+            board = serve(self, Seen(SameHost, code=code))
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(ValueError, f"/api/health/commands: {code}"):
+                    health.fetch_commands(board.url, TOKEN)
+                with self.assertRaisesRegex(ValueError, f"/api/health/commands/result: {code}"):
+                    health.report_command(board.url, TOKEN, "c1", "ok", "done", "n1")
+            self.assertEqual([path for _, path, _, _ in board.seen],
+                             ["/api/health/commands", "/api/health/commands/result"])  # /moved/... never requested
+
     def test_fetch_retries_a_dropped_connection(self):
         board = serve(self, Seen(Flaky, drops=2))
         err = io.StringIO()
@@ -293,6 +333,59 @@ class Commands(unittest.TestCase):
                      lambda: health.report_command("http://board.example", TOKEN, "c1", "ok")):
             with self.assertRaisesRegex(ValueError, "without https"):
                 call()
+
+
+class NotRunTwice(unittest.TestCase):
+    """A command whose result report fails is still pending on the server and comes back on the next poll."""
+
+    def setUp(self):
+        self.clock = Clock()
+        self.kills = []
+        mock.patch.object(health, "sample", return_value=SNAP).start()
+        mock.patch.object(health, "push").start()
+        mock.patch.object(health, "allowed_target", return_value=None).start()
+        mock.patch.object(health, "terminate", side_effect=lambda pid: self.kills.append(pid) or "terminated").start()
+        self.report = mock.patch.object(health, "report_command").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def cmd(self, cid="c1", nonce="n1", pid=4242):
+        return {"id": cid, "nonce": nonce, "kind": "close", "target": {"pid": pid},
+                "expires_at": time.time() + 3600}
+
+    def run_polls(self, polls):
+        fetch = mock.patch.object(health, "fetch_commands", side_effect=polls + [[]] * 50).start()
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            health.collect({"control": True}, "/nonexistent", "https://board.example", TOKEN, 10,
+                           iterations=len(polls) + 1, wall=lambda: self.clock.wall, mono=lambda: self.clock.mono,
+                           sleep=self.clock.sleep)  # every 10 s: one poll between samples
+        self.assertEqual(fetch.call_count, len(polls))
+        return err.getvalue()
+
+    def test_a_failed_report_does_not_rerun_the_command(self):
+        gone = ValueError("/api/health/commands/result: connection dropped after 4 tries")
+        self.report.side_effect = [gone, gone, None]
+        err = self.run_polls([[self.cmd()], [self.cmd()], [self.cmd()]])
+        self.assertEqual(self.kills, [4242])  # ran once, though the server returned it three times
+        self.assertEqual([c.args for c in self.report.call_args_list], [("https://board.example", TOKEN, "c1",
+                                                                        "ok", "terminated", "n1")] * 3)
+        self.assertIn("control report: /api/health/commands/result: connection dropped after 4 tries; "
+                      "it won't be run again", err)
+        self.assertEqual(err.count("(reported again, not re-run)"), 2)
+
+    def test_reported_or_new_commands_still_run(self):
+        self.report.side_effect = [ValueError("drop"), None, None, None]
+        self.run_polls([[self.cmd()], [self.cmd()], [self.cmd(nonce="n2")], [self.cmd(cid="c2", nonce="n3")]])
+        self.assertEqual(self.kills, [4242, 4242, 4242])  # n1 once; a re-queued Close (new nonce) and c2 run
+
+    def test_memory_is_bounded(self):
+        self.report.side_effect = ValueError("drop")
+        polls = [[self.cmd(cid=f"c{i}", nonce=f"n{i}")] for i in range(health.UNREPORTED_MAX + 5)]
+        polls.append([self.cmd(cid="c0", nonce="n0")])  # forgotten (oldest), so it would run again
+        polls.append([self.cmd(cid=f"c{health.UNREPORTED_MAX + 4}", nonce=f"n{health.UNREPORTED_MAX + 4}")])
+        with mock.patch.object(health, "_say"):
+            self.run_polls(polls)
+        self.assertEqual(len(self.kills), health.UNREPORTED_MAX + 6)
 
 
 if __name__ == "__main__":

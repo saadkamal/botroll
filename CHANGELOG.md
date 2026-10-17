@@ -5,7 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## Unreleased
 
 - `botroll health --every` survives a bad iteration: a sample that fails or times out (such as a hung `ps`), a push or command poll that drops with any error (including `RemoteDisconnected`), and the start-up command fetch are logged, and the next sample follows. Before, any of these could end the collector.
-- Close/Stop command polls and result reports go through the same sender as pushes: no redirects (the push token is never resent to another address) and dropped connections retried.
+- Close/Stop command polls and result reports go through the same sender as pushes: no redirects (the push token is never resent to another address) and dropped connections retried. A command whose report fails every retry is not run again when the next poll returns it; its result is reported again.
 - Every line the collector writes to stderr starts with an ISO 8601 time with the UTC offset.
 - The collector logs `stalled N s` when a sample starts more than twice `--every` late, with how far the monotonic clock moved, to tell a paused machine from a stuck process.
 - `botroll push` and `botroll health` retry a dropped connection: always when it dropped before the request was sent, and after sending only for roll files and watchdog flags (never `/api/prune` or health samples). `BOTROLL_RETRIES` (default 3) and `BOTROLL_RETRY_BACKOFF` (default 1 second, doubling, capped at 30) tune it. A drop after sending now fails with a plain error instead of a traceback, so `botroll health --every` keeps running.

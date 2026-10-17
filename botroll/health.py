@@ -1376,7 +1376,7 @@ def collect(cfg: dict, directory: str, url: str | None = None, token: str | None
         except Exception as e:  # noqa: BLE001  (logged; the collector must start anyway)
             if not re.search(r": 404\b", str(e)):  # 404: the server has control off, so nothing is queued
                 _say(f"control: couldn't refuse queued commands: {_why(e)}")
-    done, last = 0, None
+    done, last, unreported = 0, None, {}
     while True:
         started, started_wall = mono(), wall()
         if every and last is not None:
@@ -1407,16 +1407,50 @@ def collect(cfg: dict, directory: str, url: str | None = None, token: str | None
             deadline = mono() + wait
             while mono() < deadline:
                 try:
-                    cmds = fetch_commands(url, token)
-                    for r in run_commands(cfg, cmds, snap) if cmds else []:
-                        try:
-                            report_command(url, token, r["id"], r["status"], r.get("detail") or "",
-                                           r.get("nonce") or "")
-                        except Exception as e:  # noqa: BLE001
-                            _say(f"control report: {_why(e)}")
-                        _say(f"control {r['id']} {r['status']}: {r.get('detail')}")
+                    _poll_commands(cfg, url, token, snap, unreported)
                 except Exception as e:  # noqa: BLE001
                     _say(f"control poll: {_why(e)}")
                 sleep(min(10, max(deadline - mono(), 0.1)))
         else:
             sleep(wait)
+
+
+UNREPORTED_MAX = 64  # results kept for commands that ran but whose report never got through
+
+
+def _command_key(c) -> tuple | None:
+    """What identifies one queued command: its id and nonce (a re-queued Close gets a new nonce)."""
+    if not isinstance(c, dict) or not isinstance(c.get("id"), (str, int)) or isinstance(c.get("id"), bool):
+        return None
+    return (str(c["id"]), str(c.get("nonce") or ""))
+
+
+def _poll_commands(cfg: dict, url: str, token: str | None, snap, unreported: dict) -> None:
+    """One control poll. A command that already ran here but whose result report failed (every retry) is still
+    pending on the server, so the next poll returns it again: it is not run a second time (its target may be
+    alive and its PID reused); the result it got is reported again instead. unreported maps
+    _command_key -> that result, oldest first, at most UNREPORTED_MAX."""
+    cmds = fetch_commands(url, token)
+    fresh, results = [], []
+    for c in cmds or []:
+        key = _command_key(c)
+        if key is not None and key in unreported:
+            results.append((key, unreported[key], True))
+        else:
+            fresh.append(c)
+    for c, r in zip(fresh, run_commands(cfg, fresh, snap) if fresh else []):
+        results.append((_command_key(c), r, False))
+    for key, r, again in results:
+        try:
+            report_command(url, token, r["id"], r["status"], r.get("detail") or "", r.get("nonce") or "")
+        except Exception as e:  # noqa: BLE001
+            _say(f"control report: {_why(e)}" + ("" if key is None else "; it won't be run again"))
+            if key is not None:
+                unreported.pop(key, None)
+                unreported[key] = r
+                while len(unreported) > UNREPORTED_MAX:
+                    unreported.pop(next(iter(unreported)))
+        else:
+            if key is not None:
+                unreported.pop(key, None)
+        _say(f"control {r['id']} {r['status']}: {r.get('detail')}" + (" (reported again, not re-run)" if again else ""))
