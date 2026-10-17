@@ -151,11 +151,24 @@ railway variables \
   --set 'BOTROLL_PASSWORD_HASH=scrypt$…' \
   --set "BOTROLL_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
   --set "BOTROLL_PUSH_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
-  --set BOTROLL_CLIENT_IP_HEADER=X-Real-IP  # Railway sets this; without it, rate-limits use the proxy hop
-  --set BOTROLL_TZ=Europe/London            # your timezone, so ages on the board are right
-railway up                                  # builds the Dockerfile
+  --set BOTROLL_CLIENT_IP_HEADER=X-Real-IP \
+  --set BOTROLL_TZ=Europe/London            # X-Real-IP: Railway sets it, so rate-limits see the client, not the proxy hop
+railway status --json                       # note the project id
+d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" && railway up "$d" -p <project-id>   # builds the Dockerfile
 railway domain                              # a public https address
 ```
+
+Deploy from `git archive`, not from the working directory: the upload is then exactly the commit you name, with no untracked or uncommitted files, and the commit id is stamped into the build (`botroll/_build.py` is marked `export-subst` in `.gitattributes`). `-p <project-id>` makes the target explicit, so a directory linked to some other Railway project can't deploy there by mistake. To update, check out the commit (for example a release tag) and run the same `git archive … railway up` line again.
+
+To check what is running, read `/health`, which needs no sign-in:
+
+```sh
+curl -s https://<your-domain>/health            # ok, version: 0.1.0, commit: <full id>
+curl -sI https://<your-domain>/health | grep -i x-botroll-version   # 0.1.0+<first 12 of the commit>
+git rev-parse HEAD                              # compare
+```
+
+`commit: unknown` means the image was built without a commit id: from a plain checkout (not `git archive`) and without `--build-arg GIT_SHA=$(git rev-parse HEAD)`. Railway deploys from a connected GitHub repo fill it in on their own. `BOTROLL_COMMIT` set on the service overrides the baked-in value.
 
 Railway sets `PORT` and terminates https. `railway.toml` points its health check at `/health`, the only page that needs no sign-in. Read the push token back with `railway variables` when you set up the bots' machine.
 
@@ -237,6 +250,7 @@ On Docker, the same path is on the `botroll-data` volume.
 | `BOTROLL_SECRET` | at least 32 random characters, for signing cookies. Required. Changing it, changing the password, or signing out revokes every session |
 | `BOTROLL_PUSH_TOKEN` | at least 32 random characters, different from the password and from `BOTROLL_SECRET`. Without it the push API is off |
 | `BOTROLL_DATA` | where pushed files are stored. `/data` in the container; otherwise `--dir` |
+| `BOTROLL_COMMIT` | the commit id `/health` reports. Normally baked in at build time (see [On Railway](#on-railway)); set it only to override that |
 | `PORT` | the port to listen on, default 8000 |
 | `BOTROLL_TZ` | your timezone, such as `America/New_York`. Ages on the board, and the digest hour, are measured in it. Without it, the machine's zone (`TZ`) |
 | `BOTROLL_URL` | on the server: the board's https address, linked from emails. On the bots' machine: an alias for `BOTROLL_PUSH_URL` |

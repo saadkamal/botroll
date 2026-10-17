@@ -10,6 +10,7 @@ import pathlib
 import re
 import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -17,6 +18,8 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
+import botroll
+import botroll._build  # noqa: F401  (patched in Version)
 from botroll import serve
 from botroll.serve import (ATTEMPTS, MAX_JSON_DEPTH, MAX_ROLL, MIN_PASSWORD, SCRIPT_HASH, STYLE_HASH,
                            check_password, configure, hash_password, load_json, make_server)
@@ -100,6 +103,63 @@ class Server(unittest.TestCase):
         return self.request("POST", path, body, {"Authorization": f"Bearer {token}", **headers})
 
 
+class Version(unittest.TestCase):
+    def commit(self, env=None, baked="$Format:%H$"):
+        with mock.patch.dict(os.environ, {"BOTROLL_COMMIT": env} if env is not None else {}), \
+                mock.patch("botroll._build.COMMIT", baked):
+            if env is None:
+                os.environ.pop("BOTROLL_COMMIT", None)
+            return botroll.commit(), botroll.version_string()
+
+    def test_unknown_in_a_plain_checkout(self):
+        self.assertEqual(self.commit(), ("unknown", botroll.__version__))
+
+    def test_baked_in_commit(self):
+        self.assertEqual(self.commit(baked="0123456789abcdef0123456789abcdef01234567"),
+                         ("0123456789abcdef0123456789abcdef01234567", botroll.__version__ + "+0123456789ab"))
+
+    def test_env_overrides_and_is_normalised(self):
+        self.assertEqual(self.commit(env=" ABCDEF1 ", baked="0" * 40)[0], "abcdef1")
+
+    def test_anything_but_a_hex_id_is_ignored(self):
+        for bad in ("", "abc", "x" * 40, "a" * 41, "abcdef1\r\nSet-Cookie: x=1", "deadbeef; rm", "../../etc"):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.commit(env=bad, baked=bad)[0], "unknown")
+                self.assertEqual(self.commit(env=bad, baked="b" * 40)[0], "b" * 40)
+
+    def test_package_version(self):
+        self.assertEqual(botroll.__version__, "0.1.0")
+        toml = (pathlib.Path(__file__).parent.parent / "pyproject.toml").read_text()
+        self.assertIn('path = "botroll/__init__.py"', toml)  # the one place the version lives
+
+    def test_git_archive_stamps_the_commit(self):
+        root = pathlib.Path(__file__).parent.parent
+        attrs = (root / ".gitattributes").read_text()
+        self.assertIn("botroll/_build.py export-subst", attrs)
+        try:
+            head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                  timeout=20, check=True).stdout.strip()
+            listed = subprocess.run(["git", "-C", str(root), "ls-files", "botroll/_build.py", ".gitattributes"],
+                                    capture_output=True, text=True, timeout=20, check=True).stdout.split()
+            if len(listed) < 2:
+                self.skipTest("_build.py or .gitattributes not committed yet")
+            raw = subprocess.run(["git", "-C", str(root), "archive", "--format=tar", "HEAD", "botroll/_build.py"],
+                                 capture_output=True, timeout=20, check=True).stdout
+        except (OSError, subprocess.SubprocessError):
+            self.skipTest("needs a git checkout")
+        import io
+        import tarfile
+        with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+            text = tar.extractfile("botroll/_build.py").read().decode()
+        self.assertIn(f'COMMIT = "{head}"', text)
+
+    def test_dockerfile_bakes_git_sha(self):
+        docker = (pathlib.Path(__file__).parent.parent / "Dockerfile").read_text()
+        self.assertIn('ARG GIT_SHA=""', docker)
+        self.assertIn("botroll/_build.py", docker)
+        self.assertLess(docker.index("ARG GIT_SHA"), docker.index("pip install"))
+
+
 class Startup(unittest.TestCase):
     def test_refuses_to_start_open(self):
         for env in [{}, {"BOTROLL_SECRET": SECRET}, {"BOTROLL_PASSWORD": "x"},
@@ -156,10 +216,20 @@ class Startup(unittest.TestCase):
 
 class Auth(Server):
     def test_health_is_public(self):
-        r = self.request("GET", "/health")
-        self.assertEqual((r.status, r.body), (200, "ok\n"))
-        head = self.request("HEAD", "/health")
-        self.assertEqual((head.status, head.body, head.headers["Content-Length"]), (200, "", "3"))
+        with mock.patch.dict(os.environ, {"BOTROLL_COMMIT": "a" * 40}):
+            r = self.request("GET", "/health")
+            head = self.request("HEAD", "/health")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.body, f"ok\nversion: {botroll.__version__}\ncommit: {'a' * 40}\n")
+        self.assertEqual(r.body.splitlines()[0], "ok")  # what existing health checks look for
+        self.assertEqual(r.headers["X-BotRoll-Version"], f"{botroll.__version__}+{'a' * 12}")
+        self.assertEqual((head.status, head.body, head.headers["Content-Length"]),
+                         (200, "", str(len(r.body.encode()))))
+        self.assertEqual(head.headers["X-BotRoll-Version"], r.headers["X-BotRoll-Version"])
+
+    def test_version_header_only_on_health(self):
+        self.assertIsNone(self.request("GET", "/login").headers["X-BotRoll-Version"])
+        self.assertIsNone(self.request("GET", "/").headers["X-BotRoll-Version"])
 
     def test_every_other_route_needs_a_session(self):
         for method, path in [("GET", "/"), ("GET", "/?x=1"), ("GET", "/nope"), ("POST", "/"), ("POST", "/logout"),

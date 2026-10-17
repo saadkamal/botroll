@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+- `/health` reports the running version and commit (`ok`, then `version: 0.1.0` and `commit: <id>`) and sends `X-BotRoll-Version: 0.1.0+<12-char commit>`. The commit is baked in at build time: `git archive` stamps it via `export-subst`, the Dockerfile takes `--build-arg GIT_SHA=…` (or Railway's commit variable), and `BOTROLL_COMMIT` overrides it. The first line is still `ok`, so existing health checks keep working.
+- The Railway steps deploy a `git archive` of a named commit with `railway up <dir> -p <project-id>`, and a missing line continuation in the `railway variables` example is fixed.
 - `botroll push` and `botroll health` retry a dropped connection: always when it dropped before the request was sent, and after sending only for roll files and watchdog flags (never `/api/prune` or health samples). `BOTROLL_RETRIES` (default 3) and `BOTROLL_RETRY_BACKOFF` (default 1 second, doubling, capped at 30) tune it. A drop after sending now fails with a plain error instead of a traceback, so `botroll health --every` keeps running.
 - Public-repo housekeeping: SECURITY.md, CODE_OF_CONDUCT.md, issue and pull request templates, README badges, features, a settings index and a security section.
 - Examples, tests, screenshots and the site use neutral demo names (Ann, Max, Kai, Zoe) and generic paths.

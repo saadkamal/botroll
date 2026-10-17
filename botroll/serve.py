@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from . import actions, health, notify
-from . import SLUG, PruneRefused, bots, items, local, locked, now, path, prune, read, store, write_atomic
+from . import SLUG, PruneRefused, __version__, bots, commit, items, local, locked, now, path, prune, read, store, version_string, write_atomic
 from .board import BOARD_CSS, BOARD_SCRIPT, THEMES, document, page, snapshot, theme_toggle
 from .watch import check, processes
 
@@ -470,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         if urlsplit(self.path).path == "/health":
-            return self.reply(200, "ok\n", "text/plain", head=True)
+            return self.health_ok(head=True)
         self.reply(501, "Unsupported method\n", "text/plain", head=True)
 
     def route(self, method: str) -> None:
@@ -479,7 +479,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.cfg.insecure_local and not local:
             return self.reply(403, "--insecure-local only answers to localhost\n", "text/plain")  # DNS rebinding
         if path_ == "/health":
-            return self.reply(200, "ok\n", "text/plain")
+            return self.health_ok()
         if path_.startswith("/api/"):
             return self.api(method, path_)
         if path_ == "/theme" and method == "POST":
@@ -534,6 +534,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if not head:
             self.wfile.write(raw)
+
+    def health_ok(self, head: bool = False) -> None:
+        """/health: 200 with "ok" first (what health checks look for), then the version and commit that are running,
+        so a deploy can be checked from outside. Also as the X-BotRoll-Version header (0.1.0+<commit>)."""
+        self.reply(200, f"ok\nversion: {__version__}\ncommit: {commit()}\n", "text/plain",
+                   [("X-BotRoll-Version", version_string())], head=head)
 
     def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
         self.close_connection = True
