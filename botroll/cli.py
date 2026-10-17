@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import json
 import os
 import sys
-import time
 
 from . import STATES, __version__, about, add, bots, items, now, read, tasks_dir, title, update, waiting_label
 from . import health, notify, serve
@@ -83,11 +83,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("action", choices=["test"], help="test: send a test email with the current settings")
 
     a = p.parse_args(argv)
-    try:
-        return run(a)
-    except (ValueError, LookupError) as e:
-        print(f"botroll: {e}", file=sys.stderr)
-        return 2
+    # The collector runs for days: every line it writes to stderr starts with an ISO timestamp.
+    with health.stamped_stderr() if a.cmd == "health" else contextlib.nullcontext():
+        try:
+            return run(a)
+        except (ValueError, LookupError) as e:
+            print(f"botroll: {e}", file=sys.stderr)
+            return 2
 
 
 def run(a: argparse.Namespace) -> int:
@@ -154,49 +156,7 @@ def run(a: argparse.Namespace) -> int:
             raise ValueError("health --url needs --token or BOTROLL_PUSH_TOKEN")
         if cfg.get("control") and not a.url:
             print("botroll: control: true needs --url to pull commands", file=sys.stderr)
-        if a.url and not cfg.get("control") and a.every:
-            # Control is off here: refuse anything the server still has queued so it can't run later.
-            try:
-                for r in health.run_commands(cfg, health.fetch_commands(a.url, a.token)):
-                    health.report_command(a.url, a.token, r["id"], r["status"], r["detail"], r["nonce"])
-            except ValueError:
-                pass  # server control off (404) or unreachable: nothing queued for us
-        while True:
-            started = time.monotonic()
-            snap = health.sample(cfg)
-            try:
-                if a.url:
-                    health.push(a.url, a.token, snap)
-                else:
-                    health.append(d, snap)
-            except ValueError as e:
-                if not a.every:
-                    raise
-                print(f"botroll: {e}", file=sys.stderr)
-            if a.print:
-                print(json.dumps(snap, indent=2, ensure_ascii=False), flush=True)
-            if not a.every:
-                break
-            # Pull-model remote control: poll commands every ~10s between samples when enabled.
-            wait = max(a.every - (time.monotonic() - started), 1)
-            if cfg.get("control") and a.url:
-                deadline = time.monotonic() + wait
-                while time.monotonic() < deadline:
-                    try:
-                        cmds = health.fetch_commands(a.url, a.token)
-                        if cmds:
-                            for r in health.run_commands(cfg, cmds, snap):
-                                try:
-                                    health.report_command(a.url, a.token, r["id"], r["status"], r.get("detail") or "",
-                                                          r.get("nonce") or "")
-                                except ValueError as e:
-                                    print(f"botroll: control report: {e}", file=sys.stderr)
-                                print(f"botroll: control {r['id']} {r['status']}: {r.get('detail')}", file=sys.stderr)
-                    except ValueError as e:
-                        print(f"botroll: control poll: {e}", file=sys.stderr)
-                    time.sleep(min(10, max(deadline - time.monotonic(), 0.1)))
-            else:
-                time.sleep(wait)
+        return health.collect(cfg, d, a.url, a.token, a.every, a.print)
     elif a.cmd == "hash-password":
         password = getpass.getpass("Password: ") if sys.stdin.isatty() else sys.stdin.readline().rstrip("\n")
         serve.require_password(password)
