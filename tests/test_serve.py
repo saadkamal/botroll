@@ -103,6 +103,65 @@ class Server(unittest.TestCase):
         return self.request("POST", path, body, {"Authorization": f"Bearer {token}", **headers})
 
 
+class LargePages(Server):
+    """A page bigger than the socket buffer arrives whole: Content-Length matches the bytes sent."""
+
+    def setUp(self):
+        real = serve.Handler.setup
+
+        def small_buffer(handler):
+            handler.request.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)  # like a proxy hop that's full
+            real(handler)
+        patch = mock.patch.object(serve.Handler, "setup", small_buffer)
+        patch.start()
+        self.addCleanup(patch.stop)
+        super().setUp()
+        big = "".join(f"- [doing] T-{i} Überprüfung — café ☕ 日本語 🚀 naïve “quotes” · updated 2026-10-10 15:00\n"
+                      for i in range(1, 400))
+        pathlib.Path(self.data, "zoe.md").write_text("---\nname: Zoë\nrole: Recherche\n---\n" + big,
+                                                    encoding="utf-8")
+
+    def slow_get(self, path, cookies):
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=10)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        cookie = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        sock.sendall(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n".encode())
+        time.sleep(0.3)  # let the server fill the buffers before anything is read
+        raw = bytearray()
+        with sock:
+            while chunk := sock.recv(65536):
+                raw += chunk
+        head, _, body = bytes(raw).partition(b"\r\n\r\n")
+        length = int(re.search(rb"(?im)^content-length: *(\d+)", head)[1])
+        return head, length, body
+
+    def test_signed_in_board_arrives_whole(self):
+        head, length, body = self.slow_get("/", self.session())
+        self.assertIn(b" 200 ", head.split(b"\r\n")[0])
+        self.assertGreater(length, 50_000)  # well past the 4 KB buffer
+        self.assertEqual(len(body), length)
+        self.assertTrue(body.rstrip().endswith(b"</html>"))
+        self.assertIn("Zoë", body.decode("utf-8"))
+
+    def test_writer_sends_everything(self):
+        a, b = socket.socketpair()
+        self.addCleanup(a.close)
+        self.addCleanup(b.close)
+        a.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        got = bytearray()
+
+        def drain():
+            time.sleep(0.2)
+            while len(got) < 300_000 and (chunk := b.recv(65536)):
+                got.extend(chunk)
+        t = threading.Thread(target=drain)
+        t.start()
+        w = serve._SendAll(a, time.monotonic() + 10)
+        self.assertEqual(w.write(b"x" * 300_000), 300_000)
+        t.join(10)
+        self.assertEqual(len(got), 300_000)
+
+
 class Version(unittest.TestCase):
     def commit(self, env=None, baked="$Format:%H$"):
         with mock.patch.dict(os.environ, {"BOTROLL_COMMIT": env} if env is not None else {}), \
