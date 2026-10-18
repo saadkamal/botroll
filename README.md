@@ -154,11 +154,11 @@ railway variables \
   --set BOTROLL_CLIENT_IP_HEADER=X-Real-IP \
   --set BOTROLL_TZ=Europe/London            # X-Real-IP: Railway sets it, so rate-limits see the client, not the proxy hop
 railway status --json                       # note the project id
-d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" && railway up "$d" -p <project-id>   # builds the Dockerfile
+d=$(mktemp -d) && git archive HEAD | tar -x -C "$d" && railway up "$d" --path-as-root -p <project-id>   # builds the Dockerfile
 railway domain                              # a public https address
 ```
 
-Deploy from `git archive`, not from the working directory: the upload is then exactly the commit you name, with no untracked or uncommitted files, and the commit id is stamped into the build (`botroll/_build.py` is marked `export-subst` in `.gitattributes`). `-p <project-id>` makes the target explicit, so a directory linked to some other Railway project can't deploy there by mistake. To update, check out the commit (for example a release tag) and run the same `git archive … railway up` line again.
+Deploy from `git archive`, not from the working directory: the upload is then exactly the commit you name, with no untracked or uncommitted files, and the commit id is stamped into the build (`botroll/_build.py` is marked `export-subst` in `.gitattributes`). `--path-as-root` makes the archive directory the build root (without it, a directory outside the linked one fails with "prefix not found"). `-p <project-id>` makes the target explicit, so a directory linked to some other Railway project can't deploy there by mistake. To update, check out the commit (for example a release tag) and run the same `git archive … railway up` line again.
 
 To check what is running, read `/health`, which needs no sign-in:
 

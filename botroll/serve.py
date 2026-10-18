@@ -300,6 +300,41 @@ def store_findings(data: str, findings) -> int:
 
 # The server --------------------------------------------------------------------
 
+WRITE_FLOOR = 5  # seconds a response write always gets, even when the request deadline is nearly up
+
+
+class _SendAll:
+    """The response writer: every write sends all of its bytes (socket.sendall).
+
+    makefile("wb", buffering=0) returns a SocketIO whose write() is one send(), which can return after part of
+    the data when the socket buffer is full; http.server ignores that count, so a large page (bigger than what a
+    proxy's connection takes in one go) was cut short while its Content-Length promised the whole body. Each write
+    waits at most until the request deadline, but never less than WRITE_FLOOR seconds."""
+
+    def __init__(self, sock, deadline: float):
+        self._sock, self._deadline = sock, deadline
+        self.closed = False
+
+    def write(self, data) -> int:
+        data = memoryview(data)
+        self._sock.settimeout(max(self._deadline - time.monotonic(), WRITE_FLOOR))
+        self._sock.sendall(data)
+        return data.nbytes
+
+    def writelines(self, lines) -> None:
+        for line in lines:
+            self.write(line)
+
+    def flush(self) -> None:
+        pass
+
+    def writable(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _DeadlineFile:
     """A socket reader that never blocks past an absolute monotonic deadline.
 
@@ -471,7 +506,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         self.rfile = _DeadlineFile(self.connection, self.deadline)
-        self.wfile = self.connection.makefile("wb", buffering=0)
+        self.wfile = _SendAll(self.connection, self.deadline)
 
     def handle_one_request(self) -> None:
         self._replied = False
