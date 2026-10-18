@@ -163,8 +163,8 @@ Deploy from `git archive`, not from the working directory: the upload is then ex
 To check what is running, read `/health`, which needs no sign-in:
 
 ```sh
-curl -s https://<your-domain>/health            # ok, version: 0.1.0, commit: <full id>
-curl -sI https://<your-domain>/health | grep -i x-botroll-version   # 0.1.0+<first 12 of the commit>
+curl -s https://<your-domain>/health            # ok, version: 0.1.2, commit: <full id>
+curl -sI https://<your-domain>/health | grep -i x-botroll-version   # 0.1.2+<first 12 of the commit>
 git rev-parse HEAD                              # compare
 ```
 

@@ -187,7 +187,7 @@ class Version(unittest.TestCase):
                 self.assertEqual(self.commit(env=bad, baked="b" * 40)[0], "b" * 40)
 
     def test_package_version(self):
-        self.assertEqual(botroll.__version__, "0.1.0")
+        self.assertEqual(botroll.__version__, "0.1.2")
         toml = (pathlib.Path(__file__).parent.parent / "pyproject.toml").read_text()
         self.assertIn('path = "botroll/__init__.py"', toml)  # the one place the version lives
 
