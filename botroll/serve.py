@@ -610,7 +610,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def health_ok(self, head: bool = False) -> None:
         """/health: 200 with "ok" first (what health checks look for), then the version and commit that are running,
-        so a deploy can be checked from outside. Also as the X-BotRoll-Version header (0.1.0+<commit>)."""
+        so a deploy can be checked from outside. Also as the X-BotRoll-Version header (0.1.1+<commit>)."""
         self.reply(200, f"ok\nversion: {__version__}\ncommit: {commit()}\n", "text/plain",
                    [("X-BotRoll-Version", version_string())], head=head)
 

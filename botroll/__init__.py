@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 _COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
 
@@ -41,7 +41,7 @@ def _baked_commit() -> str:
 
 
 def version_string() -> str:
-    """The version with the commit as a local label, e.g. 0.1.0+3f2c1ab9d0e4 (just 0.1.0 when the commit is unknown)."""
+    """The version with the commit as a local label, e.g. 0.1.1+3f2c1ab9d0e4 (just 0.1.1 when the commit is unknown)."""
     c = commit()
     return __version__ if c == "unknown" else f"{__version__}+{c[:12]}"
 
