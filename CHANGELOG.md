@@ -2,9 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.1.2, unreleased
+
+- The app reports version 0.1.2 (`/health`, the `X-BotRoll-Version` header, `botroll --version`, the package metadata). The v0.1.1 tag (7c4c0f5) reported 0.1.0 by mistake because `__version__` wasn't bumped; v0.1.1 is left as is, and this release gets a fresh v0.1.2 tag.
+
 ## Unreleased
 
-- The app reports version 0.1.1 (`/health`, the `X-BotRoll-Version` header, `botroll --version`); 0.1.0 was still reported after the v0.1.1 tag.
 - Fixed: a page larger than the connection's send buffer (in practice a busy signed-in board of about 40 KB or more behind Railway's proxy) was cut short. The response writer did a single `send()` and ignored a partial write, so the body stopped early while `Content-Length` promised all of it, and browsers hung. Every response write now sends all its bytes.
 - `botroll health --every` survives a bad iteration: a sample that fails or times out (such as a hung `ps`), a push or command poll that drops with any error (including `RemoteDisconnected`), and the start-up command fetch are logged, and the next sample follows. Before, any of these could end the collector.
 - Close/Stop command polls and result reports go through the same sender as pushes: no redirects (the push token is never resent to another address) and dropped connections retried. A command whose report fails every retry is not run again when the next poll returns it; its result is reported again.
