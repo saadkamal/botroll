@@ -1,0 +1,5 @@
+[
+  {"kind": "cpu", "text": "pid 48213 (fixture-gen) at 99% CPU for 1h 4m", "bot": "qa", "id": "T-22", "pid": 48213},
+  {"kind": "pid", "text": "pid 50112 (ffmpeg) still running, but T-2 is done", "bot": "video", "id": "T-2", "pid": 50112},
+  {"kind": "capture", "text": "pid 52040 (ffmpeg) capturing for 1h 4m, not on any open item", "bot": null, "id": null, "pid": 52040}
+]

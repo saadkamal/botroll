@@ -41,7 +41,7 @@ When you change the board, render the examples and look at them at desktop and p
 BOTROLL_NOW="2026-10-10 15:30" python3 -m botroll --dir examples/tasks board --html /tmp/board.html
 ```
 
-The screenshots in `docs/` and `site/` were taken from that output with real processes running, so the watchdog's process flags appear. [examples/README.md](examples/README.md) explains how.
+The screenshots in `docs/` and `site/` come from `python3 scripts/screenshots.py`, which serves the example team (plus the invented flags and Box health data in `examples/`) and takes them with headless Chrome. Run it again after a visible change to the board. [examples/README.md](examples/README.md) explains what it uses.
 
 ## Rules of thumb
 

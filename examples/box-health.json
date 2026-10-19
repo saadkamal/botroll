@@ -1,0 +1,49 @@
+{
+  "about": "Invented Box health data for the demo box behind the screenshots. Nothing here comes from a real machine. scripts/screenshots.py turns it into 24 hours of samples ending at BOTROLL_NOW.",
+  "host": "demo-box",
+  "cores": 8,
+  "total_mb": 16384,
+  "history": [
+    [1.2, 9800, "Ravi"], [1.0, 9900, "Ravi"], [0.8, 10100, "Ravi"], [0.6, 10300, "Sasha"],
+    [0.5, 10400, "Sasha"], [0.5, 10400, "Sasha"], [0.4, 10500, "Ravi"], [0.4, 10500, "Ravi"],
+    [0.6, 10200, "Ravi"], [0.9, 9900, "Vera"], [1.4, 9400, "Vera"], [2.2, 9000, "Vera"],
+    [3.0, 8600, "Ravi"], [2.6, 8800, "Ravi"], [2.1, 9100, "Sasha"], [1.8, 9300, "Sasha"],
+    [2.4, 9000, "Ravi"], [3.6, 8400, "Ravi"], [5.2, 7600, "Ravi"], [6.8, 6900, "Vera"],
+    [9.6, 6100, "Vera"], [11.4, 5600, "Vera"], [8.2, 6400, "Vera"], [6.1, 7000, "Ravi"],
+    [5.4, 7200, "Ravi"], [4.8, 7500, "Sasha"], [4.2, 7700, "Sasha"], [3.9, 7800, "Ravi"],
+    [4.6, 7400, "Ravi"], [6.4, 6800, "Ravi"], [8.8, 6200, "Vera"], [17.6, 4100, "Vera"],
+    [12.3, 5200, "Vera"], [7.1, 6600, "Ravi"], [5.6, 7100, "Ravi"], [4.4, 7500, "Sasha"],
+    [3.8, 7700, "Sasha"], [3.5, 7800, "Ravi"], [4.1, 7600, "Ravi"], [5.0, 7300, "Ravi"],
+    [7.4, 6700, "Vera"], [9.9, 6000, "Vera"], [6.6, 6800, "Ravi"], [4.9, 7300, "Ravi"],
+    [4.0, 7500, "Sasha"], [3.4, 7600, "Ravi"], [3.2, 7500, "Ravi"], [3.1, 7400, "Ravi"]
+  ],
+  "latest": {
+    "load": [3.1, 3.6, 4.0],
+    "available_mb": 7400,
+    "browsers": [
+      {"profile": "ravi-research", "bot": "Ravi", "procs": 14, "rss_mb": 2150, "cpu": 34, "main_pid": 41210,
+       "closable": true, "running_s": 20400,
+       "tabs": [{"title": "Vector DB benchmarks", "origin": "docs.example.com"},
+                {"title": "Pricing survey results", "origin": "sheets.example.com"},
+                {"title": "BotRoll", "origin": "board.example.com"}]},
+      {"profile": "sasha-social", "bot": "Sasha", "procs": 9, "rss_mb": 1300, "cpu": 12, "main_pid": 41388,
+       "closable": true, "running_s": 9000,
+       "tabs": [{"title": "Launch thread draft", "origin": "drafts.example.com"},
+                {"title": "Scheduled posts", "origin": "social.example.com"}]},
+      {"profile": "vera-video", "bot": "Vera", "procs": 7, "rss_mb": 910, "cpu": 6, "main_pid": 41502,
+       "closable": true, "running_s": 3600,
+       "tabs": [{"title": "Demo cut 2 review", "origin": "video.example.com"}]},
+      {"profile": "scratch-profile", "procs": 6, "rss_mb": 700, "cpu": 3}
+    ],
+    "helpers": [
+      {"pid": 7001, "rss_mb": 564, "cpu": 0, "elapsed_s": 9120, "stale": true, "cmd": "playwright-runtime"},
+      {"pid": 7002, "rss_mb": 118, "cpu": 1, "elapsed_s": 960, "stale": false, "cmd": "playwright-runtime"}
+    ],
+    "jobs": [
+      {"pid": 8001, "kind": "ffmpeg", "expect_s": 3600, "elapsed_s": 1260, "rss_mb": 420, "cpu": 88, "cmd": "ffmpeg"}
+    ],
+    "alerts": [
+      {"kind": "stale-helper", "pid": 7001, "text": "helper 7001 has run 2h 32m holding 564 MB"}
+    ]
+  }
+}

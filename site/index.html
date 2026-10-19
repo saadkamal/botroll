@@ -28,6 +28,7 @@
     {"@type":"Question","name":"Why not Linear, Jira or GitHub Issues?","acceptedAnswer":{"@type":"Answer","text":"They are built for people coordinating projects, and they work well for that. The problem here is smaller and closer to the bots: did this bot write down all three parts of what you just asked, is it still on them, and what does it need from you?"}},
     {"@type":"Question","name":"Do I need a server?","acceptedAnswer":{"@type":"Answer","text":"No. The files, the CLI, the watchdog and the static board run on your machine. botroll serve is optional, for a password-protected board you can open from a phone."}},
     {"@type":"Question","name":"Does the watchdog kill anything?","acceptedAnswer":{"@type":"Answer","text":"No. A wrong kill costs more than a report. The bot that started the process knows whether it is safe to stop. If you want a hand on the switch, opt in to the owner-only Close browser and Stop job buttons. Nothing is stopped unless you click and confirm."}},
+    {"@type":"Question","name":"Can I answer a bot from the board?","acceptedAnswer":{"@type":"Answer","text":"Yes, if you turn on actions. Approve, Decline, Reply and Nudge send a signed webhook to the URL you give for that bot, such as a routine, Zapier, n8n or a small HTTP handler. The bot does the work and updates its roll. The board never edits an item itself."}},
     {"@type":"Question","name":"Where is the source?","acceptedAnswer":{"@type":"Answer","text":"On GitHub at github.com/saadkamal/botroll, under the MIT licence."}},
     {"@type":"Question","name":"How do I get in touch?","acceptedAnswer":{"@type":"Answer","text":"Email hello@botroll.co."}}
   ]}
@@ -117,7 +118,15 @@ role: Social
   <section class="wrap section" id="board">
     <p class="idx">03 / The board</p>
     <h2>A ledger, not a kanban.</h2>
-    <p class="sub">Oldest asks first. One card per bot. Colour only in the chips. Follows your light or dark setting.</p>
+    <p class="sub">Oldest asks first. One card per bot. Colour only in the chips. Follows your light or dark setting, and works on a phone.</p>
+    <div class="steps feats">
+      <article class="step"><span class="n">ACTIONS</span><h3>Approve. Decline. Reply. Nudge.</h3><p>Optional buttons that send a signed webhook to the bot. The bot does the work and updates its roll. The board never changes an item by itself.</p></article>
+      <article class="step"><span class="n">SYNC</span><h3>Sync now</h3><p>One button asks the bots' machine to push right away, so you don't wait for the next push.</p></article>
+      <article class="step"><span class="n">FRESHNESS</span><h3>Pushed 4m ago</h3><p>The header says when the last push arrived. After 30 minutes with nothing new, a banner says the board may be out of date.</p></article>
+      <article class="step"><span class="n">WATCHDOG</span><h3>Flags on the card</h3><p>A PID still running on a done item, a process hogging the CPU, a screen capture nobody owns. Reported on the bot's card, never killed.</p></article>
+      <article class="step"><span class="n">DONE</span><h3>Rolling 24h summary</h3><p>"7 got done in the last 24h" means the last 24 hours, not since midnight. Late-night work still counts.</p></article>
+      <article class="step"><span class="n">SIGN-IN</span><h3>One password</h3><p>The hosted board sits behind one password, with "Keep me signed in" for 30 days. Sign out ends every session.</p></article>
+    </div>
     <p class="demo-label"><i></i> Sample roll · 10 Oct 2026 · labelled demo, not live</p>
     <div class="board" aria-label="Sample BotRoll board">
       <ul class="asks">
@@ -148,9 +157,9 @@ role: Social
     <figure class="shot">
       <picture>
         <source media="(max-width: 560px)" srcset="board-phone.png">
-        <img src="board-desktop.png" width="1280" height="1758" alt="The BotRoll board: a one-sentence summary, a Needs you strip, and a card per bot.">
+        <img src="board-desktop.png" width="1280" height="2087" alt="The BotRoll board: a one-sentence summary, Pushed 4m ago and a Sync now button in the header, a Needs you strip with Approve, Decline, Reply and Nudge buttons, a card per bot with watchdog flags, and a No owner card for a stray screen capture.">
       </picture>
-      <figcaption>The real board, from the example team. Same look on a phone.</figcaption>
+      <figcaption>The real board, served by <code>botroll serve</code> from the example team with actions turned on. Same look on a phone.</figcaption>
     </figure>
   </section>
 
@@ -159,18 +168,18 @@ role: Social
     <h2>See the box, not just the bots.</h2>
     <p class="sub">Ten bots on one machine means ten browsers fighting for RAM. Box health puts the machine on the same board, so you can tell which bot is eating it. Every piece is optional and off until you turn it on.</p>
     <div class="steps feats">
-      <article class="step"><span class="n">CPU · RAM · LOAD</span><h3>24 hours in bars</h3><p>Memory headroom and load against core count, with peaks in 30-minute bars. Change the width with <code>BOTROLL_HEALTH_BUCKET_MIN</code>.</p></article>
-      <article class="step"><span class="n">BROWSERS</span><h3>Named by bot</h3><p>Each browser shows which bot owns it, from a names file or per-display files. No match? It falls back to the profile name, so nothing goes unnamed.</p></article>
+      <article class="step"><span class="n">CPU · RAM · LOAD</span><h3>24 hours in bars</h3><p>Memory headroom and load against core count, with peaks in 30-minute bars and the three busiest periods listed, each with the bot whose browser was busiest. Change the width with <code>BOTROLL_HEALTH_BUCKET_MIN</code>.</p></article>
+      <article class="step"><span class="n">BROWSERS</span><h3>Named by bot</h3><p>Each browser shows which bot owns it, its PID, memory and CPU. No match? It falls back to the profile name, so nothing goes unnamed.</p></article>
       <article class="step"><span class="n">TABS</span><h3>Grouped, collapsible</h3><p>Each bot's open tabs sit under its browser. Fold them away when you only want the totals.</p></article>
-      <article class="step"><span class="n">CONTROLS</span><h3>Close browser. Stop job.</h3><p>Owner-only buttons, each with a confirm step. Off by default. You opt in with <code>BOTROLL_HEALTH_CONTROL</code>. The watchdog still never kills anything by itself.</p></article>
-      <article class="step"><span class="n">SYNC</span><h3>Sync now</h3><p>One button pulls fresh rolls and stats now, so you don't wait for the next push.</p></article>
-      <article class="step"><span class="n">DONE</span><h3>Rolling 24h summary</h3><p>"4 got done in the last 24h" means the last 24 hours, not since midnight. Late-night work still counts.</p></article>
+      <article class="step"><span class="n">ALERTS</span><h3>Stale helpers, stalls</h3><p>A helper left running for hours, a job past its expected time while the load is high, two heavy jobs at once. Each gets a line at the top of the panel.</p></article>
+      <article class="step"><span class="n">CONTROLS</span><h3>Close browser. Stop.</h3><p>Owner-only buttons for browsers, helpers and heavy jobs, each with a confirm step that names the PID. Off by default. You opt in with <code>BOTROLL_HEALTH_CONTROL</code>. The watchdog still never kills anything by itself.</p></article>
+      <article class="step"><span class="n">FRESHNESS</span><h3>Sampled just now</h3><p>The panel says when the last sample arrived. After 10 minutes without one, it asks whether the collector is running.</p></article>
     </div>
-    <p class="demo-label"><i></i> Demo box · bots Ann, Max and Kai · labelled demo, not live</p>
+    <p class="demo-label"><i></i> Demo box · browsers for Ravi, Sasha and Vera · labelled demo, not live</p>
     <figure class="shot">
       <picture>
         <source media="(max-width: 560px)" srcset="health-phone.png">
-        <img src="health-desktop.png" width="1440" height="2183" alt="Demo BotRoll board with the Box health panel: memory and CPU load meters, browsers named Ann and Max with their tabs grouped underneath, Close browser and Stop buttons, and a 24-hour bar chart.">
+        <img src="health-desktop.png" width="1440" height="3260" alt="Demo BotRoll board with the Box health panel: memory and CPU load meters, a stale-helper alert, browsers named Ravi, Sasha and Vera with their PIDs and Close browser buttons, helpers and a heavy job with Stop buttons, and a 24-hour bar chart with the three busiest periods.">
       </picture>
       <figcaption>A demo board on a demo box. Generic and optional: it reads standard process stats, with nothing tied to one setup.</figcaption>
     </figure>
@@ -179,7 +188,7 @@ role: Social
   <section class="wrap section" id="host">
     <p class="idx">05 / Self-host</p>
     <h2>Railway or Docker. A few commands.</h2>
-    <p class="sub">One password, a push token, a volume. Box health and the controls are extra settings you can skip. The server never runs your bots. Set the variables and the volume before the first deploy.</p>
+    <p class="sub">One password, a push token, a volume. Box health and the controls are extra settings you can skip. The server never runs your bots. Set the variables and the volume before the first deploy. <code>/health</code> shows the version and commit, so you can check what is running.</p>
     <div class="host">
       <figure>
         <figcaption>Railway</figcaption>
@@ -188,7 +197,9 @@ railway init
 railway service
 railway volume add --mount-path /data
 railway variables --set …
-railway up
+d=$(mktemp -d)
+git archive HEAD | tar -x -C "$d"
+railway up "$d" --path-as-root -p &lt;project-id&gt;
 railway domain</code></pre>
       </figure>
       <figure>
@@ -226,6 +237,10 @@ docker run -d -p 8000:8000 \
       <details>
         <summary>Does the watchdog kill anything?</summary>
         <p>No. A wrong kill costs more than a report. The bot that started the process knows whether it is safe to stop. If you want a hand on the switch, opt in to the owner-only Close browser and Stop job buttons. Nothing is stopped unless you click and confirm.</p>
+      </details>
+      <details>
+        <summary>Can I answer a bot from the board?</summary>
+        <p>Yes, if you turn on actions. Approve, Decline, Reply and Nudge send a signed webhook to the URL you give for that bot, such as a routine, Zapier, n8n or a small HTTP handler. The bot does the work and updates its roll. The board never edits an item itself.</p>
       </details>
       <details>
         <summary>Where is the source?</summary>
