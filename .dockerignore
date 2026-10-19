@@ -6,6 +6,7 @@ tests
 examples
 site
 skill
+scripts
 **/__pycache__
 *.egg-info
 dist

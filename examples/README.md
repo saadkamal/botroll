@@ -14,14 +14,19 @@ botroll --dir examples/tasks watch
 
 ## Process flags
 
-The PIDs in these files are made up, so on your machine the process flags (`pid`, `cpu`, `capture`) won't appear unless those PIDs happen to exist. The screenshots in `docs/` and `site/` used real processes on the machine that took them:
+The PIDs in these files are made up, so on your machine the process flags (`pid`, `cpu`, `capture`) won't appear unless those PIDs happen to exist. [`watch-findings.json`](watch-findings.json) has three invented flags, in the form `botroll push` sends them, for the screenshots:
 
-- a busy Python loop recorded on Kai's (QA) open item, which became a `cpu` flag after an hour,
-- an ffmpeg recorded on Vera's (Video) done item `T-2`, which became a `pid` flag,
-- an ffmpeg recorded on nothing, which became a `capture` flag in the "No owner" card after 30 minutes,
-- an ffmpeg recorded on Vera's open item `T-3`, which is tracked, so it isn't flagged.
+- a `cpu` flag on Kai's (QA) open item `T-22`,
+- a `pid` flag on Vera's (Video) done item `T-2`, whose recorded ffmpeg is still running,
+- a `capture` flag in the "No owner" card, for an ffmpeg no item claims.
 
-To do the same, copy `tasks/` somewhere, start those processes, put their PIDs in the `pid:` fields, and wait.
+## Box health
+
+[`box-health.json`](box-health.json) describes an invented machine, `demo-box`: 8 cores, 16 GB, browsers for Ravi, Sasha and Vera, a stale helper, an ffmpeg job, and 24 hours of load in 30-minute steps. Nothing in it comes from a real machine.
+
+## Screenshots
+
+`python3 scripts/screenshots.py` rebuilds every image in `site/` and `docs/` from these files. It runs `botroll serve` on localhost with the clock pinned to 15:30, a throwaway password, secrets that start with `FAKE_TOKEN_DO_NOT_USE`, and action webhooks that are never called, then signs in with headless Chrome (Playwright). `--out DIR` writes the images somewhere else.
 
 ## Running from cron
 

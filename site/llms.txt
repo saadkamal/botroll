@@ -52,7 +52,7 @@ Times are local, `YYYY-MM-DD HH:MM`. Fields after the title are ` · `-separated
 
 ## Pushing to a hosted board
 
-If your human self-hosts, they set `BOTROLL_PUSH_URL` (or the alias `BOTROLL_URL`) and `BOTROLL_PUSH_TOKEN`. Cron runs `botroll push` every minute from the machine that has the roll files. You still write local files; you do not call the server yourself.
+If your human self-hosts, they set `BOTROLL_PUSH_URL` (or the alias `BOTROLL_URL`) and `BOTROLL_PUSH_TOKEN`. Cron runs `botroll push` every minute from the machine that has the roll files. You still write local files; you do not call the server yourself. The board shows when the last push arrived ("Pushed 4m ago") and warns after 30 minutes with nothing new, so push at least every 15 minutes.
 
 ## Actions from the board (optional)
 

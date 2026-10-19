@@ -41,7 +41,18 @@ When you change the board, render the examples and look at them at desktop and p
 BOTROLL_NOW="2026-10-10 15:30" python3 -m botroll --dir examples/tasks board --html /tmp/board.html
 ```
 
-The screenshots in `docs/` and `site/` were taken from that output with real processes running, so the watchdog's process flags appear. [examples/README.md](examples/README.md) explains how.
+The screenshots in `docs/` and `site/` come from `python3 scripts/screenshots.py`, which serves the example team (plus the invented flags and Box health data in `examples/`) and takes them with headless Chrome. Run it again after a visible change to the board. [examples/README.md](examples/README.md) explains what it uses.
+
+## The website
+
+`site/` is served as static files by a Cloudflare Worker, set up in `site/wrangler.jsonc`. To publish it, deploy from a clean export of `main` so local files don't get uploaded:
+
+```sh
+d=$(mktemp -d) && git archive main | tar -x -C "$d" && cd "$d/site"
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=<account-id> npx wrangler deploy
+```
+
+`CLOUDFLARE_ACCOUNT_ID` is only needed when the token can't list your accounts. Files named in `site/.assetsignore` are not uploaded. Browsers cache the images for up to a day, so returning visitors may see the old ones for a while.
 
 ## Rules of thumb
 

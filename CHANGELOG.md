@@ -8,6 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## Unreleased
 
+- The website and README screenshots are regenerated for 0.1.2 by `scripts/screenshots.py`, from the example team plus invented process flags (`examples/watch-findings.json`) and Box health data (`examples/box-health.json`). The site copy now covers board actions, Sync now, "Pushed … ago" and the stale-push banner, watchdog flags, Box health alerts and busiest periods, and `/health` showing the version and commit.
 - Fixed: a page larger than the connection's send buffer (in practice a busy signed-in board of about 40 KB or more behind Railway's proxy) was cut short. The response writer did a single `send()` and ignored a partial write, so the body stopped early while `Content-Length` promised all of it, and browsers hung. Every response write now sends all its bytes.
 - `botroll health --every` survives a bad iteration: a sample that fails or times out (such as a hung `ps`), a push or command poll that drops with any error (including `RemoteDisconnected`), and the start-up command fetch are logged, and the next sample follows. Before, any of these could end the collector.
 - Close/Stop command polls and result reports go through the same sender as pushes: no redirects (the push token is never resent to another address) and dropped connections retried. A command whose report fails every retry is not run again when the next poll returns it; its result is reported again.
